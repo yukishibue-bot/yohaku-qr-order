@@ -112,6 +112,74 @@
   }
   .pay-btn.to-pay{ background:var(--accent-dark); color:#fff; }
   .pay-btn.done{ background:#fff; color:var(--muted); border:1px solid var(--line); cursor:default; }
+  /* 注文の変更・取消ボタン */
+  .so-actions{ display:flex; gap:8px; margin-top:10px; }
+  .so-actions .small-btn{ flex:1; padding:11px; font-size:14px; }
+  /* 数量ステッパー */
+  .stepper{ display:flex; align-items:center; gap:4px; }
+  .step-btn{
+    width:42px; height:42px; border-radius:10px; border:1px solid var(--line);
+    background:#fff; font-size:20px; cursor:pointer; line-height:1;
+  }
+  .step-btn:disabled{ opacity:.35; cursor:default; }
+  .step-qty{ min-width:34px; text-align:center; font-size:17px; font-weight:700; }
+  /* 注文編集モード */
+  .edit-line{
+    display:flex; align-items:center; gap:8px; padding:8px 0;
+    border-bottom:1px dashed var(--line);
+  }
+  .edit-line .el-info{ flex:1; min-width:0; }
+  .edit-line .el-name{ font-size:15px; font-weight:600; }
+  .edit-line .el-price{ font-size:12px; color:var(--muted); }
+  .edit-line .el-sub{ font-size:15px; font-weight:700; white-space:nowrap; min-width:64px; text-align:right; }
+  .edit-add{ display:flex; gap:8px; margin-top:12px; }
+  .edit-add select{
+    flex:1; font-size:15px; padding:10px; border:1px solid var(--line);
+    border-radius:8px; background:#fff; min-width:0;
+  }
+  .edit-total{
+    margin-top:12px; text-align:right;
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif; font-size:22px; font-weight:700;
+  }
+  .edit-total .tax{ font-size:11px; color:var(--muted); font-family:inherit; font-weight:400; }
+  .edit-warn{ color:var(--alert); font-size:13px; margin-top:10px; line-height:1.7; }
+  .edit-btns{ display:flex; gap:8px; margin-top:12px; }
+  .edit-btns .oc-btn{ margin-top:0; flex:1; }
+  /* スタッフ注文 */
+  .panel-open-btn{
+    width:100%; padding:15px; border-radius:10px; cursor:pointer;
+    border:1px dashed var(--accent); background:#fff; color:var(--accent-dark);
+    font-size:16px; letter-spacing:.12em; font-weight:600;
+  }
+  .staff-panel{
+    background:#fff; border:1px solid var(--line); border-radius:14px;
+    padding:16px; margin-top:12px; box-shadow:0 2px 8px rgba(60,55,40,.05);
+  }
+  .staff-panel select#staffSeat{
+    font-size:17px; padding:10px; border:1px solid var(--line); border-radius:8px; background:#fff;
+  }
+  .staff-item{
+    display:flex; align-items:center; gap:8px; padding:10px 0;
+    border-bottom:1px dashed var(--line);
+  }
+  .staff-item .si-info{ flex:1; min-width:0; }
+  .staff-item .si-name{ font-size:15px; font-weight:600; }
+  .staff-item .si-price{ font-size:12px; color:var(--muted); }
+  .staff-item.is-soldout{ opacity:.5; }
+  .soldout-badge{
+    font-size:11px; color:#fff; background:var(--alert); border-radius:6px;
+    padding:2px 8px; letter-spacing:.1em; white-space:nowrap; margin-left:6px;
+  }
+  .staff-total{
+    margin-top:14px; text-align:right;
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif; font-size:24px; font-weight:700;
+  }
+  .staff-total .tax{ font-size:11px; color:var(--muted); font-family:inherit; font-weight:400; }
+  .add-order-btn{
+    width:100%; margin-top:12px; padding:13px; border-radius:10px; cursor:pointer;
+    background:#fff; color:var(--accent-dark); border:1px solid var(--accent);
+    font-size:15px; letter-spacing:.12em; font-weight:600;
+  }
   .empty{ text-align:center; color:var(--muted); font-size:14px; padding:44px 0; }
   .section-title{
     font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
@@ -188,6 +256,20 @@
 
   <main>
     <div id="ordersRoot"><div class="empty">読み込んでいます…</div></div>
+
+    <div class="section-title">スタッフ注文</div>
+    <button class="panel-open-btn" id="staffOpenBtn">＋ スタッフ注文を入れる</button>
+    <div class="staff-panel" id="staffPanel" style="display:none">
+      <div class="mr-fields">
+        <label>席番号
+          <select id="staffSeat"></select>
+        </label>
+      </div>
+      <div id="staffItems"></div>
+      <div class="staff-total">合計 <span id="staffTotal">¥0</span> <span class="tax">税込</span></div>
+      <button class="oc-btn to-served" id="staffSubmit">注文を入れる</button>
+      <button class="oc-btn to-new" id="staffCloseBtn">閉じる</button>
+    </div>
 
     <div class="section-title">メニュー管理</div>
     <div id="menuRoot"></div>
@@ -287,6 +369,10 @@
       .then(function(res){
         if (res.error) { showError('注文の取得に失敗しました。再読み込みしてください。'); return; }
         orders = res.data || [];
+        // 編集中の注文が一覧から消えていたらドラフトを破棄
+        if (editDraft && !orders.some(function(o){ return o.id === editDraft.orderId; })) {
+          editDraft = null;
+        }
         renderOrders();
         renderStats();
       });
@@ -364,6 +450,10 @@
       card.appendChild(head);
 
       seat.list.forEach(function(o){
+        if (editDraft && editDraft.orderId === o.id) {
+          card.appendChild(buildEditBlock(o));
+          return;
+        }
         var block = document.createElement('div');
         block.className = 'so-block' + (o.status === 'served' ? ' is-served' : '');
 
@@ -394,8 +484,29 @@
           btn.addEventListener('click', function(){ setStatus(o.id, 'new', btn); });
         }
         block.appendChild(btn);
+
+        var actions = document.createElement('div');
+        actions.className = 'so-actions';
+        var editBtn = document.createElement('button');
+        editBtn.className = 'small-btn';
+        editBtn.textContent = '変更';
+        editBtn.addEventListener('click', function(){ startEdit(o); });
+        actions.appendChild(editBtn);
+        var cancelOrderBtn = document.createElement('button');
+        cancelOrderBtn.className = 'small-btn danger';
+        cancelOrderBtn.textContent = '取消';
+        cancelOrderBtn.addEventListener('click', function(){ deleteOrder(o); });
+        actions.appendChild(cancelOrderBtn);
+        block.appendChild(actions);
+
         card.appendChild(block);
       });
+
+      var seatAddBtn = document.createElement('button');
+      seatAddBtn.className = 'add-order-btn';
+      seatAddBtn.textContent = 'この席に追加注文';
+      seatAddBtn.addEventListener('click', function(){ openStaffPanel(seat.seatNo); });
+      card.appendChild(seatAddBtn);
 
       var payBtn = document.createElement('button');
       if (seat.hasUnpaidOrder) {
@@ -441,6 +552,291 @@
       });
   }
 
+  // ---------- 数量ステッパー（共用） ----------
+  function buildStepper(qty, disabled, onChange){
+    var wrap = document.createElement('div');
+    wrap.className = 'stepper';
+    var minus = document.createElement('button');
+    minus.className = 'step-btn';
+    minus.textContent = '−';
+    minus.disabled = !!disabled || qty <= 0;
+    minus.addEventListener('click', function(){ onChange(Math.max(0, qty - 1)); });
+    var q = document.createElement('span');
+    q.className = 'step-qty';
+    q.textContent = qty;
+    var plus = document.createElement('button');
+    plus.className = 'step-btn';
+    plus.textContent = '＋';
+    plus.disabled = !!disabled;
+    plus.addEventListener('click', function(){ onChange(qty + 1); });
+    wrap.appendChild(minus);
+    wrap.appendChild(q);
+    wrap.appendChild(plus);
+    return wrap;
+  }
+
+  // ---------- 注文の変更・取消 ----------
+  // 編集中のドラフト。ポーリング再描画でも消えないようDOMではなく変数に保持する
+  var editDraft = null; // { orderId, lines: [{name, price, qty}] }
+
+  function startEdit(o){
+    editDraft = {
+      orderId: o.id,
+      lines: (o.lines || []).map(function(l){
+        return { name: l.name, price: l.price, qty: l.qty };
+      })
+    };
+    renderOrders();
+  }
+
+  function buildEditBlock(o){
+    var block = document.createElement('div');
+    block.className = 'so-block';
+    var elapsedMin = Math.floor((Date.now() - new Date(o.created_at).getTime()) / 60000);
+    var late = o.status === 'new' && elapsedMin >= 10;
+    block.innerHTML =
+      '<div class="so-head">' +
+        '<span class="so-no">No.' + o.order_no + '</span>' +
+        (o.paid ? '<span class="paid-badge">決済済み</span>' : '') +
+        '<span class="oc-elapsed' + (late ? ' late' : '') + '" data-elapsed="' + o.created_at + '">' + elapsedText(o.created_at) + '</span>' +
+      '</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-top:6px">注文を変更中（数量0で品目を削除）</div>';
+
+    editDraft.lines.forEach(function(l, idx){
+      var row = document.createElement('div');
+      row.className = 'edit-line';
+      var info = document.createElement('div');
+      info.className = 'el-info';
+      info.innerHTML = '<div class="el-name">' + escapeHtml(l.name) + '</div>' +
+        '<div class="el-price">' + yen(l.price) + '（税込）</div>';
+      row.appendChild(info);
+      row.appendChild(buildStepper(l.qty, false, function(nq){
+        if (nq <= 0) { editDraft.lines.splice(idx, 1); }
+        else { editDraft.lines[idx].qty = nq; }
+        renderOrders();
+      }));
+      var sub = document.createElement('div');
+      sub.className = 'el-sub';
+      sub.textContent = yen(l.price * l.qty);
+      row.appendChild(sub);
+      block.appendChild(row);
+    });
+
+    // 品目の追加（売り切れ品目は対象外）
+    var addRow = document.createElement('div');
+    addRow.className = 'edit-add';
+    var sel = document.createElement('select');
+    var avail = menuItems.filter(function(it){ return !it.sold_out; });
+    if (avail.length === 0) {
+      var opt0 = document.createElement('option');
+      opt0.value = '';
+      opt0.textContent = '追加できる品目がありません';
+      sel.appendChild(opt0);
+    } else {
+      avail.forEach(function(it){
+        var opt = document.createElement('option');
+        opt.value = it.id;
+        opt.textContent = it.name + '（' + yen(it.price) + '）';
+        sel.appendChild(opt);
+      });
+    }
+    addRow.appendChild(sel);
+    var addBtn = document.createElement('button');
+    addBtn.className = 'small-btn';
+    addBtn.textContent = '追加';
+    addBtn.disabled = avail.length === 0;
+    addBtn.addEventListener('click', function(){
+      var id = Number(sel.value);
+      var item = null;
+      menuItems.forEach(function(it){ if (it.id === id) item = it; });
+      if (!item) return;
+      var found = null;
+      editDraft.lines.forEach(function(l){
+        if (l.name === item.name && l.price === item.price) found = l;
+      });
+      if (found) { found.qty += 1; }
+      else { editDraft.lines.push({ name: item.name, price: item.price, qty: 1 }); }
+      renderOrders();
+    });
+    addRow.appendChild(addBtn);
+    block.appendChild(addRow);
+
+    var total = editDraft.lines.reduce(function(s, l){ return s + l.price * l.qty; }, 0);
+    var totalEl = document.createElement('div');
+    totalEl.className = 'edit-total';
+    totalEl.innerHTML = yen(total) + ' <span class="tax">税込</span>';
+    block.appendChild(totalEl);
+
+    if (editDraft.lines.length === 0) {
+      var warn = document.createElement('div');
+      warn.className = 'edit-warn';
+      warn.textContent = '品目がすべて削除されています。このままでは保存できません。注文そのものを取り消す場合は「キャンセル」で編集をやめてから「取消」ボタンを使ってください。';
+      block.appendChild(warn);
+    }
+
+    var btns = document.createElement('div');
+    btns.className = 'edit-btns';
+    var saveBtn = document.createElement('button');
+    saveBtn.className = 'oc-btn to-served';
+    saveBtn.textContent = '保存';
+    saveBtn.disabled = editDraft.lines.length === 0;
+    if (saveBtn.disabled) saveBtn.style.opacity = '.4';
+    saveBtn.addEventListener('click', function(){ saveEdit(saveBtn); });
+    btns.appendChild(saveBtn);
+    var cancelEditBtn = document.createElement('button');
+    cancelEditBtn.className = 'oc-btn to-new';
+    cancelEditBtn.textContent = 'キャンセル';
+    cancelEditBtn.addEventListener('click', function(){
+      editDraft = null;
+      renderOrders();
+    });
+    btns.appendChild(cancelEditBtn);
+    block.appendChild(btns);
+    return block;
+  }
+
+  function saveEdit(btn){
+    if (!editDraft) return;
+    var lines = editDraft.lines.filter(function(l){ return l.qty > 0; });
+    if (lines.length === 0) return;
+    var total = lines.reduce(function(s, l){ return s + l.price * l.qty; }, 0);
+    var id = editDraft.orderId;
+    btn.disabled = true;
+    sb.from('orders').update({ lines: lines, total: total }).eq('id', id)
+      .then(function(res){
+        btn.disabled = false;
+        if (res.error) { showError('注文の変更に失敗しました。'); return; }
+        orders.forEach(function(o){
+          if (o.id === id) { o.lines = lines; o.total = total; }
+        });
+        editDraft = null;
+        renderOrders();
+        renderStats();
+      });
+  }
+
+  function deleteOrder(o){
+    if (!window.confirm('注文番号' + o.order_no + 'を取り消しますか？')) return;
+    sb.from('orders').delete().eq('id', o.id)
+      .then(function(res){
+        if (res.error) { showError('注文の取消に失敗しました。'); return; }
+        if (editDraft && editDraft.orderId === o.id) editDraft = null;
+        orders = orders.filter(function(x){ return x.id !== o.id; });
+        renderOrders();
+        renderStats();
+      });
+  }
+
+  // ---------- スタッフ注文 ----------
+  var staffQty = {}; // menu_items.id -> 数量
+
+  function initStaffPanel(){
+    var sel = document.getElementById('staffSeat');
+    var ph = document.createElement('option');
+    ph.value = '';
+    ph.textContent = '席を選択';
+    sel.appendChild(ph);
+    for (var i = 1; i <= 60; i++) {
+      var opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = i + '番席';
+      sel.appendChild(opt);
+    }
+    sel.addEventListener('change', updateStaffSubmitState);
+  }
+
+  function staffLinesAndTotal(){
+    var lines = [], total = 0;
+    menuItems.forEach(function(it){
+      var q = staffQty[it.id] || 0;
+      if (q > 0) {
+        lines.push({ name: it.name, price: it.price, qty: q });
+        total += it.price * q;
+      }
+    });
+    return { lines: lines, total: total };
+  }
+
+  function updateStaffSubmitState(){
+    var btn = document.getElementById('staffSubmit');
+    if (!btn) return;
+    var seat = parseInt(document.getElementById('staffSeat').value, 10);
+    var lt = staffLinesAndTotal();
+    btn.disabled = !(seat >= 1 && lt.lines.length > 0);
+    btn.style.opacity = btn.disabled ? '.4' : '';
+  }
+
+  function updateStaffTotal(){
+    document.getElementById('staffTotal').textContent = yen(staffLinesAndTotal().total);
+    updateStaffSubmitState();
+  }
+
+  function renderStaffItems(){
+    var root = document.getElementById('staffItems');
+    if (!root) return;
+    root.innerHTML = '';
+    if (menuItems.length === 0) {
+      root.innerHTML = '<div class="empty">メニューが登録されていません</div>';
+      updateStaffTotal();
+      return;
+    }
+    menuItems.forEach(function(it){
+      var row = document.createElement('div');
+      row.className = 'staff-item' + (it.sold_out ? ' is-soldout' : '');
+      var info = document.createElement('div');
+      info.className = 'si-info';
+      info.innerHTML = '<span class="si-name">' + escapeHtml(it.name) + '</span>' +
+        (it.sold_out ? '<span class="soldout-badge">売り切れ</span>' : '') +
+        '<div class="si-price">' + yen(it.price) + '（税込）</div>';
+      row.appendChild(info);
+      row.appendChild(buildStepper(staffQty[it.id] || 0, it.sold_out, function(nq){
+        staffQty[it.id] = nq;
+        renderStaffItems();
+      }));
+      root.appendChild(row);
+    });
+    updateStaffTotal();
+  }
+
+  function openStaffPanel(seatNo){
+    var panel = document.getElementById('staffPanel');
+    panel.style.display = 'block';
+    document.getElementById('staffOpenBtn').textContent = 'スタッフ注文を閉じる';
+    if (seatNo) document.getElementById('staffSeat').value = String(seatNo);
+    renderStaffItems();
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function closeStaffPanel(){
+    document.getElementById('staffPanel').style.display = 'none';
+    document.getElementById('staffOpenBtn').textContent = '＋ スタッフ注文を入れる';
+  }
+
+  document.getElementById('staffOpenBtn').addEventListener('click', function(){
+    var panel = document.getElementById('staffPanel');
+    if (panel.style.display === 'block') { closeStaffPanel(); }
+    else { openStaffPanel(null); }
+  });
+  document.getElementById('staffCloseBtn').addEventListener('click', closeStaffPanel);
+  document.getElementById('staffSubmit').addEventListener('click', function(){
+    var seat = parseInt(document.getElementById('staffSeat').value, 10);
+    var lt = staffLinesAndTotal();
+    if (!(seat >= 1)) { showError('席番号を選択してください。'); return; }
+    if (lt.lines.length === 0) { showError('品目を1つ以上選んでください。'); return; }
+    var btn = this;
+    btn.disabled = true;
+    sb.from('orders').insert({
+      seat_no: seat, lines: lt.lines, total: lt.total, status: 'new', paid: false
+    }).then(function(res){
+      btn.disabled = false;
+      if (res.error) { showError('注文の登録に失敗しました。'); return; }
+      staffQty = {};
+      document.getElementById('staffSeat').value = '';
+      closeStaffPanel();
+      loadOrders();
+    });
+  });
+
   // 経過時間の表示を30秒ごとに更新
   setInterval(function(){
     document.querySelectorAll('[data-elapsed]').forEach(function(el){
@@ -483,6 +879,7 @@
         if (res.error) { showError('メニューの取得に失敗しました。'); return; }
         menuItems = res.data || [];
         renderMenuAdmin();
+        renderStaffItems();
       });
   }
 
@@ -588,6 +985,7 @@
   });
 
   function startApp(){
+    initStaffPanel();
     loadOrders();
     loadMenu();
     startRealtime();
