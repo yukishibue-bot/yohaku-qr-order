@@ -214,6 +214,62 @@
   .small-btn.primary{ background:var(--accent); color:#fff; border-color:var(--accent); }
   .small-btn.danger{ color:var(--alert); border-color:#e0c4bd; }
   .add-form{ background:#fff; border:1px dashed var(--line); border-radius:12px; padding:12px; }
+  /* 売上集計 */
+  .sales-box{
+    background:#fff; border:1px solid var(--line); border-radius:14px;
+    padding:16px; box-shadow:0 2px 8px rgba(60,55,40,.05);
+  }
+  .sales-date-row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .sales-date-row input[type=date]{
+    font-size:16px; padding:9px; border:1px solid var(--line); border-radius:8px; background:#fff;
+  }
+  .day-btn{
+    padding:9px 13px; border-radius:8px; border:1px solid var(--line);
+    background:#fff; font-size:13px; cursor:pointer;
+  }
+  .day-btn.active{ background:var(--accent); color:#fff; border-color:var(--accent); font-weight:700; }
+  .sales-grid{ display:flex; flex-wrap:wrap; gap:10px 18px; margin-top:14px; }
+  .sales-grid .sg-item{ min-width:100px; }
+  .sales-grid .sg-label{ font-size:11px; color:var(--muted); letter-spacing:.1em; }
+  .sales-grid .sg-value{
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif; font-size:22px; font-weight:700;
+  }
+  .sales-grid .sg-value.pending{ color:var(--alert); }
+  .sales-table{ width:100%; border-collapse:collapse; margin-top:8px; font-size:14px; }
+  .sales-table th, .sales-table td{
+    padding:8px 6px; border-bottom:1px dashed var(--line); text-align:right;
+  }
+  .sales-table th{ font-size:11px; color:var(--muted); letter-spacing:.08em; font-weight:400; }
+  .sales-table th:first-child, .sales-table td:first-child{ text-align:left; }
+  .sales-period{ font-size:13px; color:var(--muted); margin-top:14px; line-height:1.8; }
+  .sales-period b{ color:var(--ink); }
+  .csv-row{ display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+  .csv-row .small-btn{ flex:1; padding:12px; font-size:14px; white-space:nowrap; }
+  /* 注文履歴 */
+  .hist-title{
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
+    font-size:14px; letter-spacing:.2em; margin:20px 0 8px; color:var(--accent-dark);
+  }
+  .hist-filter-row{ display:flex; gap:8px; flex-wrap:wrap; }
+  .hist-btn{
+    padding:8px 13px; border-radius:8px; border:1px solid var(--line);
+    background:#fff; font-size:13px; cursor:pointer;
+  }
+  .hist-btn.active{ background:var(--accent); color:#fff; border-color:var(--accent); font-weight:700; }
+  .hist-row{ border-top:1px dashed var(--line); padding:10px 0; }
+  .hist-head{ display:flex; align-items:baseline; gap:10px; font-size:14px; }
+  .hist-time{ color:var(--muted); font-size:13px; white-space:nowrap; }
+  .hist-no{ font-weight:600; white-space:nowrap; }
+  .hist-seat{ white-space:nowrap; }
+  .hist-total{
+    margin-left:auto; font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
+    font-size:17px; font-weight:700; white-space:nowrap;
+  }
+  .hist-lines{ font-size:13px; color:var(--ink); line-height:1.7; margin-top:4px; }
+  .unpaid-badge{
+    font-size:11px; color:var(--alert); background:#fff; border:1px solid var(--alert);
+    border-radius:6px; padding:2px 8px; letter-spacing:.1em; white-space:nowrap;
+  }
   .error-box{
     max-width:640px; margin:14px auto 0; padding:14px 18px; border:1px solid #d8a7a0;
     background:#fdf3f1; border-radius:10px; font-size:13px; line-height:1.8; display:none;
@@ -288,6 +344,22 @@
         <button class="small-btn primary" id="addBtn">追加する</button>
       </div>
     </div>
+    <div class="section-title">売上集計</div>
+    <div class="sales-box">
+      <div class="sales-date-row">
+        <input type="date" id="salesDate">
+        <button class="day-btn" data-day="2026-11-13">11/13（金）</button>
+        <button class="day-btn" data-day="2026-11-14">11/14（土）</button>
+        <button class="day-btn" data-day="2026-11-15">11/15（日）</button>
+      </div>
+      <div id="salesRoot"><div class="empty">読み込んでいます…</div></div>
+      <div class="sales-period" id="salesPeriod"></div>
+      <div class="csv-row">
+        <button class="small-btn" id="csvItemsBtn">品目別CSV</button>
+        <button class="small-btn" id="csvOrdersBtn">注文明細CSV</button>
+      </div>
+    </div>
+
     <p style="font-size:11px;color:var(--muted);margin-top:14px;line-height:1.8">
       価格は税込・円（整数）で入力してください。売り切れ切替と価格変更は即座にお客様の画面へ反映されます。
     </p>
@@ -984,10 +1056,269 @@
     });
   });
 
+  // ---------- 売上集計 ----------
+  var EVENT_DAYS = ['2026-11-13', '2026-11-14', '2026-11-15'];
+  var salesDate = null;      // 選択中の日 'YYYY-MM-DD'（JSTの暦日）
+  var salesOrders = [];      // 選択中の日の注文（集計・CSV用）
+  var salesFilter = 'all';   // 注文履歴のフィルタ: 'all' | 'paid' | 'unpaid'
+
+  // Asia/Tokyo の今日を 'YYYY-MM-DD' で返す（端末のTZに依存しない）
+  function jstTodayStr(){
+    var parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(new Date());
+    var y, m, d;
+    parts.forEach(function(p){
+      if (p.type === 'year') y = p.value;
+      if (p.type === 'month') m = p.value;
+      if (p.type === 'day') d = p.value;
+    });
+    return y + '-' + m + '-' + d;
+  }
+
+  // 'YYYY-MM-DD'（JST暦日）の [0:00, 翌0:00) を UTC の ISO 文字列で返す
+  function dayRangeISO(dateStr){
+    var p = dateStr.split('-');
+    var startMs = Date.UTC(Number(p[0]), Number(p[1]) - 1, Number(p[2])) - 9 * 3600 * 1000;
+    return {
+      start: new Date(startMs).toISOString(),
+      end: new Date(startMs + 24 * 3600 * 1000).toISOString()
+    };
+  }
+
+  function initSales(){
+    salesDate = jstTodayStr();
+    var input = document.getElementById('salesDate');
+    input.value = salesDate;
+    input.addEventListener('change', function(){
+      if (!input.value) return;
+      salesDate = input.value;
+      markDayButtons();
+      loadSales();
+    });
+    document.querySelectorAll('.day-btn').forEach(function(b){
+      b.addEventListener('click', function(){
+        salesDate = b.getAttribute('data-day');
+        input.value = salesDate;
+        markDayButtons();
+        loadSales();
+      });
+    });
+    document.getElementById('csvItemsBtn').addEventListener('click', downloadItemsCsv);
+    document.getElementById('csvOrdersBtn').addEventListener('click', downloadOrdersCsv);
+    markDayButtons();
+    loadSales();
+    loadSalesPeriod();
+  }
+
+  function markDayButtons(){
+    document.querySelectorAll('.day-btn').forEach(function(b){
+      b.classList.toggle('active', b.getAttribute('data-day') === salesDate);
+    });
+  }
+
+  function loadSales(){
+    var range = dayRangeISO(salesDate);
+    var root = document.getElementById('salesRoot');
+    root.innerHTML = '<div class="empty">読み込んでいます…</div>';
+    sb.from('orders').select('id, order_no, seat_no, lines, total, status, paid, created_at')
+      .gte('created_at', range.start)
+      .lt('created_at', range.end)
+      .order('created_at', { ascending: true })
+      .then(function(res){
+        if (res.error) { showError('売上集計の取得に失敗しました。'); return; }
+        // 日付が切り替わっていたら古い結果は捨てる
+        if (document.getElementById('salesDate').value !== salesDate) return;
+        salesOrders = res.data || [];
+        renderSales();
+      });
+  }
+
+  // 品目別集計（品名でグループ化、金額降順）
+  function aggregateItems(list){
+    var map = {};
+    list.forEach(function(o){
+      (o.lines || []).forEach(function(l){
+        if (!map[l.name]) map[l.name] = { name: l.name, qty: 0, amount: 0 };
+        map[l.name].qty += l.qty;
+        map[l.name].amount += l.price * l.qty;
+      });
+    });
+    return Object.keys(map).map(function(k){ return map[k]; })
+      .sort(function(a, b){ return b.amount - a.amount; });
+  }
+
+  function renderSales(){
+    var root = document.getElementById('salesRoot');
+    root.innerHTML = '';
+    if (salesOrders.length === 0) {
+      root.innerHTML = '<div class="empty">この日の注文はありません</div>';
+      return;
+    }
+    var total = 0, paidSum = 0, unpaidSum = 0;
+    var seatSet = {};
+    salesOrders.forEach(function(o){
+      total += o.total;
+      if (o.paid) { paidSum += o.total; } else { unpaidSum += o.total; }
+      seatSet[o.seat_no] = true;
+    });
+
+    var grid = document.createElement('div');
+    grid.className = 'sales-grid';
+    function sgItem(label, value, pending){
+      return '<div class="sg-item"><div class="sg-label">' + label + '</div>' +
+        '<div class="sg-value' + (pending ? ' pending' : '') + '">' + value + '</div></div>';
+    }
+    grid.innerHTML =
+      sgItem('売上合計（税込）', yen(total)) +
+      sgItem('注文件数', salesOrders.length + ' 件') +
+      sgItem('利用テーブル数', Object.keys(seatSet).length + ' テーブル') +
+      sgItem('決済済み', yen(paidSum)) +
+      sgItem('未決済', yen(unpaidSum), unpaidSum > 0);
+    root.appendChild(grid);
+
+    var items = aggregateItems(salesOrders);
+    var table = document.createElement('table');
+    table.className = 'sales-table';
+    var html = '<tr><th>品名</th><th>数量</th><th>金額</th></tr>';
+    items.forEach(function(it){
+      html += '<tr><td>' + escapeHtml(it.name) + '</td><td>' + it.qty + '</td><td>' + yen(it.amount) + '</td></tr>';
+    });
+    table.innerHTML = html;
+    root.appendChild(table);
+
+    // 注文履歴（フィルタ付き）
+    var histWrap = document.createElement('div');
+    histWrap.innerHTML =
+      '<div class="hist-title">注文履歴</div>' +
+      '<div class="hist-filter-row">' +
+        '<button class="hist-btn" data-filter="all">すべて</button>' +
+        '<button class="hist-btn" data-filter="paid">決済済みのみ</button>' +
+        '<button class="hist-btn" data-filter="unpaid">未決済のみ</button>' +
+      '</div>' +
+      '<div id="salesHistoryList"></div>';
+    root.appendChild(histWrap);
+    histWrap.querySelectorAll('.hist-btn').forEach(function(b){
+      b.addEventListener('click', function(){
+        salesFilter = b.getAttribute('data-filter');
+        renderSalesHistory();
+      });
+    });
+    renderSalesHistory();
+  }
+
+  var jstHourMinFmt = new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', hour12: false
+  });
+
+  // 注文履歴リスト（選択中の日の注文を新しい順に、フィルタ適用）
+  function renderSalesHistory(){
+    document.querySelectorAll('.hist-btn').forEach(function(b){
+      b.classList.toggle('active', b.getAttribute('data-filter') === salesFilter);
+    });
+    var root = document.getElementById('salesHistoryList');
+    if (!root) return;
+    root.innerHTML = '';
+    var list = salesOrders.filter(function(o){
+      if (salesFilter === 'paid') return o.paid;
+      if (salesFilter === 'unpaid') return !o.paid;
+      return true;
+    }).slice().sort(function(a, b){
+      return new Date(b.created_at) - new Date(a.created_at);
+    });
+    if (list.length === 0) {
+      root.innerHTML = '<div class="empty">該当する注文はありません</div>';
+      return;
+    }
+    list.forEach(function(o){
+      var row = document.createElement('div');
+      row.className = 'hist-row';
+      var lines = (o.lines || []).map(function(l){
+        return escapeHtml(l.name) + '×' + l.qty;
+      }).join('、');
+      row.innerHTML =
+        '<div class="hist-head">' +
+          '<span class="hist-time">' + jstHourMinFmt.format(new Date(o.created_at)) + '</span>' +
+          '<span class="hist-no">No.' + o.order_no + '</span>' +
+          '<span class="hist-seat">' + o.seat_no + '番席</span>' +
+          (o.paid ? '<span class="paid-badge">決済済み</span>' : '<span class="unpaid-badge">未決済</span>') +
+          '<span class="hist-total">' + yen(o.total) + '</span>' +
+        '</div>' +
+        '<div class="hist-lines">' + lines + '</div>';
+      root.appendChild(row);
+    });
+  }
+
+  // 開催期間（11/13〜15）の売上合計を併記
+  function loadSalesPeriod(){
+    var start = dayRangeISO(EVENT_DAYS[0]).start;
+    var end = dayRangeISO(EVENT_DAYS[EVENT_DAYS.length - 1]).end;
+    sb.from('orders').select('total')
+      .gte('created_at', start)
+      .lt('created_at', end)
+      .then(function(res){
+        var el = document.getElementById('salesPeriod');
+        if (res.error || !res.data) { el.textContent = ''; return; }
+        var sum = res.data.reduce(function(s, o){ return s + o.total; }, 0);
+        el.innerHTML = '開催期間（11/13〜15）の売上合計：<b>' + yen(sum) + '</b>（税込・' + res.data.length + '件）';
+      });
+  }
+
+  // ---------- CSV ----------
+  function csvCell(v){
+    var s = String(v == null ? '' : v);
+    if (/[",\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }
+
+  function downloadCsv(filename, rows){
+    var body = rows.map(function(r){ return r.map(csvCell).join(','); }).join('\r\n');
+    var blob = new Blob(['\uFEFF' + body], { type: 'text/csv;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function salesFileDate(){
+    return salesDate.replace(/-/g, '');
+  }
+
+  function downloadItemsCsv(){
+    var rows = [['日付', '品名', '数量', '金額']];
+    aggregateItems(salesOrders).forEach(function(it){
+      rows.push([salesDate, it.name, it.qty, it.amount]);
+    });
+    downloadCsv('yohaku-sales-' + salesFileDate() + '-items.csv', rows);
+  }
+
+  var jstTimeFmt = new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+  });
+
+  function downloadOrdersCsv(){
+    var rows = [['注文番号', '席番号', '時刻', '内容', '金額', '決済済み']];
+    salesOrders.forEach(function(o){
+      var content = (o.lines || []).map(function(l){
+        return l.name + '×' + l.qty;
+      }).join(' / ');
+      rows.push([
+        o.order_no, o.seat_no, jstTimeFmt.format(new Date(o.created_at)),
+        content, o.total, o.paid ? '決済済み' : '未決済'
+      ]);
+    });
+    downloadCsv('yohaku-sales-' + salesFileDate() + '-orders.csv', rows);
+  }
+
   function startApp(){
     initStaffPanel();
     loadOrders();
     loadMenu();
+    initSales();
     startRealtime();
   }
 })();
