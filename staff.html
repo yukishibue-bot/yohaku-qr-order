@@ -37,7 +37,7 @@
     position:sticky; top:0; z-index:10; background:#fff; border-bottom:1px solid var(--line);
     padding:12px 16px;
   }
-  .topbar-row{ max-width:640px; margin:0 auto; display:flex; align-items:flex-end; gap:18px; }
+  .topbar-row{ max-width:640px; margin:0 auto; display:flex; align-items:flex-end; gap:18px; padding-left:58px; }
   .stat{ flex:1; }
   .stat-label{ font-size:11px; color:var(--muted); letter-spacing:.12em; }
   .stat-value{ font-family:"Hiragino Mincho ProN","Yu Mincho",serif; font-size:27px; font-weight:700; }
@@ -275,6 +275,46 @@
     background:#fdf3f1; border-radius:10px; font-size:13px; line-height:1.8; display:none;
   }
   .wrap-pad{ padding:0 14px; }
+  /* ハンバーガードロワー */
+  #drawerBtn{
+    position:fixed; top:12px; left:12px; z-index:40;
+    width:48px; height:48px; border-radius:12px; border:1px solid var(--line);
+    background:#fff; box-shadow:0 2px 10px rgba(60,55,40,.18);
+    font-size:22px; line-height:1; color:var(--ink); cursor:pointer;
+  }
+  #drawerOverlay{
+    position:fixed; inset:0; z-index:50; background:rgba(43,43,40,.45);
+    opacity:0; pointer-events:none; transition:opacity .25s ease;
+  }
+  #drawerOverlay.open{ opacity:1; pointer-events:auto; }
+  #drawer{
+    position:fixed; top:0; left:0; bottom:0; z-index:60;
+    width:264px; max-width:82vw; background:#fff;
+    box-shadow:2px 0 16px rgba(60,55,40,.18);
+    transform:translateX(-105%); transition:transform .28s ease;
+    display:flex; flex-direction:column;
+  }
+  #drawer.open{ transform:translateX(0); }
+  .drawer-head{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:16px; border-bottom:1px solid var(--line);
+  }
+  .drawer-title{
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
+    font-size:16px; letter-spacing:.18em; color:var(--accent-dark);
+  }
+  #drawerClose{
+    width:40px; height:40px; border-radius:10px; border:1px solid var(--line);
+    background:#fff; font-size:16px; color:var(--ink); cursor:pointer; flex:none;
+  }
+  .drawer-item{
+    display:block; width:100%; text-align:left; padding:17px 16px;
+    font-size:16px; letter-spacing:.08em; color:var(--ink);
+    background:none; border:none; border-bottom:1px solid var(--line);
+    cursor:pointer; font-family:inherit;
+  }
+  /* ドロワーからの移動先が sticky ヘッダーに隠れないように */
+  #ordersRoot, #staffSection, #staffPanel, #menuSection, #salesSection{ scroll-margin-top:88px; }
 </style>
 </head>
 <body>
@@ -290,6 +330,19 @@
 
 <!-- メイン -->
 <div id="mainView">
+  <button id="drawerBtn" type="button" aria-label="メニューを開く">☰</button>
+  <div id="drawerOverlay"></div>
+  <nav id="drawer" aria-label="セクション移動">
+    <div class="drawer-head">
+      <span class="drawer-title">YOHAKU 注文管理</span>
+      <button id="drawerClose" type="button" aria-label="メニューを閉じる">✕</button>
+    </div>
+    <button class="drawer-item" id="navOrders" type="button">本日の注文</button>
+    <button class="drawer-item" id="navStaff" type="button">スタッフ注文</button>
+    <button class="drawer-item" id="navMenu" type="button">メニュー管理</button>
+    <button class="drawer-item" id="navSales" type="button">売上集計</button>
+  </nav>
+
   <div class="topbar">
     <div class="topbar-row">
       <div class="stat">
@@ -313,7 +366,7 @@
   <main>
     <div id="ordersRoot"><div class="empty">読み込んでいます…</div></div>
 
-    <div class="section-title">スタッフ注文</div>
+    <div class="section-title" id="staffSection">スタッフ注文</div>
     <button class="panel-open-btn" id="staffOpenBtn">＋ スタッフ注文を入れる</button>
     <div class="staff-panel" id="staffPanel" style="display:none">
       <div class="mr-fields">
@@ -327,7 +380,7 @@
       <button class="oc-btn to-new" id="staffCloseBtn">閉じる</button>
     </div>
 
-    <div class="section-title">メニュー管理</div>
+    <div class="section-title" id="menuSection">メニュー管理</div>
     <div id="menuRoot"></div>
 
     <div class="section-title">品目を追加</div>
@@ -344,7 +397,7 @@
         <button class="small-btn primary" id="addBtn">追加する</button>
       </div>
     </div>
-    <div class="section-title">売上集計</div>
+    <div class="section-title" id="salesSection">売上集計</div>
     <div class="sales-box">
       <div class="sales-date-row">
         <input type="date" id="salesDate">
@@ -1313,6 +1366,40 @@
     });
     downloadCsv('yohaku-sales-' + salesFileDate() + '-orders.csv', rows);
   }
+
+  // ---------- ハンバーガードロワー ----------
+  // ボタン・ドロワー・オーバーレイは #mainView 内にあるため、
+  // ログイン前（#mainView が display:none の間）はPIN画面に出ない
+  var drawerEl = document.getElementById('drawer');
+  var drawerOverlayEl = document.getElementById('drawerOverlay');
+  function openDrawer(){
+    drawerEl.classList.add('open');
+    drawerOverlayEl.classList.add('open');
+  }
+  function closeDrawer(){
+    drawerEl.classList.remove('open');
+    drawerOverlayEl.classList.remove('open');
+  }
+  function scrollToSection(el){
+    closeDrawer();
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  document.getElementById('drawerBtn').addEventListener('click', openDrawer);
+  document.getElementById('drawerClose').addEventListener('click', closeDrawer);
+  drawerOverlayEl.addEventListener('click', closeDrawer);
+  document.getElementById('navOrders').addEventListener('click', function(){
+    scrollToSection(document.getElementById('ordersRoot'));
+  });
+  document.getElementById('navStaff').addEventListener('click', function(){
+    closeDrawer();
+    openStaffPanel(null); // パネルを開き、その位置へスクロールする
+  });
+  document.getElementById('navMenu').addEventListener('click', function(){
+    scrollToSection(document.getElementById('menuSection'));
+  });
+  document.getElementById('navSales').addEventListener('click', function(){
+    scrollToSection(document.getElementById('salesSection'));
+  });
 
   function startApp(){
     initStaffPanel();
