@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>YOHAKU｜余白 — ご注文</title>
+<style>
+  :root{
+    --ink:#2b2b28; --muted:#8a867c; --line:#e7e2d8; --bg:#fdfcf9;
+    --accent:#5c6650; --accent-dark:#47523e; --soldout:#b9b3a6;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{
+    font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP",sans-serif;
+    background:var(--bg); color:var(--ink); padding-bottom:120px;
+  }
+  header{
+    text-align:center; padding:28px 16px 18px; border-bottom:1px solid var(--line);
+  }
+  .brand{
+    font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;
+    font-size:26px; letter-spacing:.45em; text-indent:.45em; font-weight:600;
+  }
+  .brand-sub{ font-size:11px; color:var(--muted); letter-spacing:.25em; margin-top:6px; }
+  .event{ font-size:11px; color:var(--muted); margin-top:10px; letter-spacing:.08em; }
+  .seat-bar{
+    display:flex; align-items:center; justify-content:center; gap:10px;
+    padding:12px 16px; border-bottom:1px solid var(--line); background:#fff;
+    position:sticky; top:0; z-index:5;
+  }
+  .seat-label{ font-size:12px; color:var(--muted); letter-spacing:.15em; }
+  .seat-value{
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
+    font-size:20px; font-weight:600;
+  }
+  .seat-select{ font-size:16px; padding:6px 10px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+  main{ max-width:560px; margin:0 auto; padding:0 16px; }
+  .cat-title{
+    font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;
+    font-size:15px; letter-spacing:.3em; margin:26px 0 6px; color:var(--accent-dark);
+  }
+  .item{
+    display:flex; align-items:center; gap:12px;
+    padding:14px 2px; border-bottom:1px dashed var(--line);
+  }
+  .item-info{ flex:1; min-width:0; }
+  .item-name{ font-size:15px; font-weight:600; }
+  .item-desc{ font-size:11px; color:var(--muted); margin-top:3px; }
+  .item-price{ font-size:13px; margin-top:5px; }
+  .item.soldout .item-name, .item.soldout .item-price{ color:var(--soldout); }
+  .soldout-badge{
+    display:inline-block; font-size:10px; color:#fff; background:var(--soldout);
+    border-radius:4px; padding:2px 7px; margin-left:8px; letter-spacing:.1em; vertical-align:2px;
+  }
+  .stepper{ display:flex; align-items:center; gap:10px; flex-shrink:0; }
+  .step-btn{
+    width:34px; height:34px; border-radius:50%; border:1px solid var(--line);
+    background:#fff; color:var(--ink); font-size:18px; line-height:1; cursor:pointer;
+  }
+  .step-btn:active{ background:#f3f0e8; }
+  .step-btn:disabled{ opacity:.3; cursor:default; }
+  .qty{ font-size:16px; font-weight:600; min-width:18px; text-align:center; }
+  .footer-bar{
+    position:fixed; left:0; right:0; bottom:0; z-index:10;
+    background:#fff; border-top:1px solid var(--line);
+    padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+    box-shadow:0 -4px 18px rgba(60,55,40,.06);
+  }
+  .footer-inner{ max-width:560px; margin:0 auto; display:flex; align-items:center; gap:14px; }
+  .total-box{ flex:1; }
+  .total-label{ font-size:11px; color:var(--muted); letter-spacing:.12em; }
+  .total-value{
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
+    font-size:24px; font-weight:700;
+  }
+  .total-count{ font-size:11px; color:var(--muted); margin-left:6px; }
+  #orderBtn{
+    background:var(--accent); color:#fff; border:none; border-radius:10px;
+    font-size:16px; letter-spacing:.2em; padding:15px 26px; cursor:pointer; font-weight:600;
+  }
+  #orderBtn:disabled{ background:#cfccc2; cursor:default; }
+  .notice{ text-align:center; font-size:11px; color:var(--muted); margin-top:20px; line-height:1.9; }
+  .error-box{
+    max-width:560px; margin:24px auto; padding:18px; border:1px solid #d8a7a0;
+    background:#fdf3f1; border-radius:10px; font-size:13px; line-height:1.8; display:none;
+  }
+  /* 完了画面 */
+  #doneView{ display:none; text-align:center; padding:56px 24px; }
+  #doneView .done-mark{
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
+    font-size:20px; letter-spacing:.3em; text-indent:.3em; color:var(--accent-dark);
+  }
+  #doneView .done-no{
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
+    font-size:64px; font-weight:700; margin:18px 0 4px;
+  }
+  #doneView .done-no-label{ font-size:12px; color:var(--muted); letter-spacing:.2em; }
+  #doneView .done-total{ font-size:18px; margin-top:22px; }
+  #doneView .done-msg{ font-size:13px; color:var(--muted); line-height:2; margin-top:16px; }
+  #againBtn{
+    margin-top:30px; background:#fff; color:var(--accent-dark);
+    border:1px solid var(--accent); border-radius:10px;
+    font-size:14px; letter-spacing:.15em; padding:12px 24px; cursor:pointer;
+  }
+  .loading{ text-align:center; color:var(--muted); font-size:13px; padding:40px 0; }
+</style>
+</head>
+<body>
+
+<div id="orderView">
+  <header>
+    <div class="brand">YOHAKU</div>
+    <div class="brand-sub">余 白</div>
+    <div class="event">虎ノ門横丁 POPUP ｜ 11/13–15 16:00–22:00</div>
+  </header>
+
+  <div class="seat-bar">
+    <span class="seat-label">席番号</span>
+    <span class="seat-value" id="seatDisplay"></span>
+    <select class="seat-select" id="seatSelect" style="display:none" aria-label="席番号を選択"></select>
+  </div>
+
+  <div class="error-box" id="errorBox"></div>
+
+  <main id="menuRoot">
+    <div class="loading" id="loadingMsg">メニューを読み込んでいます…</div>
+  </main>
+
+  <p class="notice">お支払いはレジにてお願いいたします。<br>追加のご注文も、この画面からどうぞ。</p>
+
+  <div class="footer-bar">
+    <div class="footer-inner">
+      <div class="total-box">
+        <div class="total-label">合計（税込）<span class="total-count" id="totalCount"></span></div>
+        <div class="total-value" id="totalValue">¥0</div>
+      </div>
+      <button id="orderBtn" disabled>注文する</button>
+    </div>
+  </div>
+</div>
+
+<div id="doneView">
+  <div class="done-mark">ご注文ありがとうございます</div>
+  <div class="done-no" id="doneNo">–</div>
+  <div class="done-no-label">注 文 番 号</div>
+  <div class="done-total">合計（税込）<b id="doneTotal">¥0</b></div>
+  <p class="done-msg">お料理の準備ができ次第、お席までお持ちします。<br>お支払いはレジにてお願いいたします。</p>
+  <button id="againBtn">続けて注文する</button>
+</div>
+
+<script src="./config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function(){
+  "use strict";
+  var cfg = window.YOHAKU_CONFIG || {};
+  var errorBox = document.getElementById('errorBox');
+
+  function showError(msg){
+    errorBox.style.display = 'block';
+    errorBox.textContent = msg;
+  }
+  function yen(n){ return '¥' + n.toLocaleString('ja-JP'); }
+
+  // ---- 設定チェック ----
+  if (!cfg.SUPABASE_URL || cfg.SUPABASE_URL.indexOf('YOUR_') === 0 ||
+      !cfg.SUPABASE_ANON_KEY || cfg.SUPABASE_ANON_KEY.indexOf('YOUR_') === 0) {
+    document.getElementById('loadingMsg').style.display = 'none';
+    showError('設定が完了していません。お手数ですが、スタッフまでお声がけください。（config.js に Supabase の URL と anon key を設定してください）');
+    return;
+  }
+  var sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+
+  // ---- 席番号 ----
+  var params = new URLSearchParams(location.search);
+  var seatParam = parseInt(params.get('seat'), 10);
+  var seatNo = (seatParam >= 1 && seatParam <= 14) ? seatParam : null;
+  var seatDisplay = document.getElementById('seatDisplay');
+  var seatSelect = document.getElementById('seatSelect');
+  if (seatNo) {
+    seatDisplay.textContent = seatNo + ' 番';
+  } else {
+    seatDisplay.style.display = 'none';
+    seatSelect.style.display = '';
+    var opt0 = document.createElement('option');
+    opt0.value = ''; opt0.textContent = '選択してください';
+    seatSelect.appendChild(opt0);
+    for (var i = 1; i <= 14; i++) {
+      var o = document.createElement('option');
+      o.value = i; o.textContent = i + ' 番席';
+      seatSelect.appendChild(o);
+    }
+    seatSelect.addEventListener('change', function(){
+      seatNo = seatSelect.value ? parseInt(seatSelect.value, 10) : null;
+      refreshOrderBtn();
+    });
+  }
+
+  // ---- メニュー取得と描画 ----
+  var CATEGORY_LABELS = { food: 'FOOD', drink: '球磨焼酎' };
+  var CATEGORY_ORDER = ['food', 'drink'];
+  var items = [];           // menu_items
+  var qty = {};             // id -> 個数
+
+  var menuRoot = document.getElementById('menuRoot');
+  var totalValue = document.getElementById('totalValue');
+  var totalCount = document.getElementById('totalCount');
+  var orderBtn = document.getElementById('orderBtn');
+
+  function calcTotal(){
+    var total = 0, count = 0;
+    items.forEach(function(it){
+      var q = qty[it.id] || 0;
+      total += it.price * q;
+      count += q;
+    });
+    return { total: total, count: count };
+  }
+  function refreshOrderBtn(){
+    var t = calcTotal();
+    totalValue.textContent = yen(t.total);
+    totalCount.textContent = t.count > 0 ? '（' + t.count + '点）' : '';
+    orderBtn.disabled = !(t.count > 0 && seatNo);
+  }
+
+  function renderMenu(){
+    menuRoot.innerHTML = '';
+    var cats = {};
+    items.forEach(function(it){
+      if (!cats[it.category]) cats[it.category] = [];
+      cats[it.category].push(it);
+    });
+    var order = CATEGORY_ORDER.filter(function(c){ return cats[c]; });
+    Object.keys(cats).forEach(function(c){ if (order.indexOf(c) < 0) order.push(c); });
+
+    order.forEach(function(cat){
+      var h = document.createElement('div');
+      h.className = 'cat-title';
+      h.textContent = CATEGORY_LABELS[cat] || cat;
+      menuRoot.appendChild(h);
+
+      cats[cat].forEach(function(it){
+        var row = document.createElement('div');
+        row.className = 'item' + (it.sold_out ? ' soldout' : '');
+
+        var info = document.createElement('div');
+        info.className = 'item-info';
+        var nameHtml = escapeHtml(it.name);
+        if (it.sold_out) nameHtml += '<span class="soldout-badge">売り切れ</span>';
+        info.innerHTML =
+          '<div class="item-name">' + nameHtml + '</div>' +
+          (it.description ? '<div class="item-desc">' + escapeHtml(it.description) + '</div>' : '') +
+          '<div class="item-price">' + yen(it.price) + '</div>';
+        row.appendChild(info);
+
+        var stepper = document.createElement('div');
+        stepper.className = 'stepper';
+        var minus = document.createElement('button');
+        minus.className = 'step-btn'; minus.textContent = '−';
+        var q = document.createElement('span');
+        q.className = 'qty'; q.textContent = qty[it.id] || 0;
+        var plus = document.createElement('button');
+        plus.className = 'step-btn'; plus.textContent = '＋';
+
+        function sync(){
+          q.textContent = qty[it.id] || 0;
+          minus.disabled = !qty[it.id];
+          plus.disabled = it.sold_out;
+          refreshOrderBtn();
+        }
+        minus.addEventListener('click', function(){
+          qty[it.id] = Math.max(0, (qty[it.id] || 0) - 1);
+          sync();
+        });
+        plus.addEventListener('click', function(){
+          if (it.sold_out) return;
+          qty[it.id] = (qty[it.id] || 0) + 1;
+          sync();
+        });
+        stepper.appendChild(minus);
+        stepper.appendChild(q);
+        stepper.appendChild(plus);
+        row.appendChild(stepper);
+        menuRoot.appendChild(row);
+        sync();
+      });
+    });
+    refreshOrderBtn();
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
+    });
+  }
+
+  function loadMenu(){
+    sb.from('menu_items').select('*').order('sort', { ascending: true }).order('id', { ascending: true })
+      .then(function(res){
+        if (res.error) {
+          document.getElementById('loadingMsg').style.display = 'none';
+          showError('メニューの取得に失敗しました。電波の良い場所で再読み込みしてください。');
+          return;
+        }
+        items = res.data || [];
+        // 売り切れになった品目の数量はリセット
+        items.forEach(function(it){ if (it.sold_out) qty[it.id] = 0; });
+        renderMenu();
+      });
+  }
+  loadMenu();
+  // 売り切れ状態の変化を拾うため、画面に戻ってきたら再取得
+  document.addEventListener('visibilitychange', function(){
+    if (!document.hidden) loadMenu();
+  });
+
+  // ---- 注文送信 ----
+  var sending = false;
+  orderBtn.addEventListener('click', function(){
+    if (sending) return;
+    var t = calcTotal();
+    if (t.count === 0 || !seatNo) return;
+
+    var lines = [];
+    items.forEach(function(it){
+      var q = qty[it.id] || 0;
+      if (q > 0) lines.push({ name: it.name, price: it.price, qty: q });
+    });
+
+    sending = true;
+    orderBtn.disabled = true;
+    orderBtn.textContent = '送信中…';
+
+    sb.from('orders').insert({
+      seat_no: seatNo,
+      lines: lines,
+      total: t.total,
+      status: 'new'
+    }).select('order_no').single()
+    .then(function(res){
+      sending = false;
+      orderBtn.textContent = '注文する';
+      if (res.error) {
+        orderBtn.disabled = false;
+        showError('注文の送信に失敗しました。もう一度お試しください。');
+        return;
+      }
+      document.getElementById('doneNo').textContent = res.data.order_no;
+      document.getElementById('doneTotal').textContent = yen(t.total);
+      document.getElementById('orderView').style.display = 'none';
+      document.getElementById('doneView').style.display = 'block';
+      window.scrollTo(0, 0);
+      // 数量リセット（追加注文に備える）
+      qty = {};
+    });
+  });
+
+  document.getElementById('againBtn').addEventListener('click', function(){
+    document.getElementById('doneView').style.display = 'none';
+    document.getElementById('orderView').style.display = 'block';
+    errorBox.style.display = 'none';
+    loadMenu();
+  });
+})();
+</script>
+</body>
+</html>

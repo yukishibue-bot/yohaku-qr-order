@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>YOHAKU｜注文管理</title>
+<style>
+  :root{
+    --ink:#2b2b28; --muted:#8a867c; --line:#e7e2d8; --bg:#f7f5f0;
+    --accent:#5c6650; --accent-dark:#47523e; --alert:#b3543f;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{
+    font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP",sans-serif;
+    background:var(--bg); color:var(--ink); padding-bottom:40px;
+  }
+  /* PIN画面 */
+  #pinView{ max-width:340px; margin:70px auto; padding:0 20px; text-align:center; }
+  #pinView .brand{
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
+    font-size:24px; letter-spacing:.4em; text-indent:.4em;
+  }
+  #pinView p{ font-size:12px; color:var(--muted); margin:14px 0 20px; }
+  #pinInput{
+    width:100%; font-size:26px; text-align:center; letter-spacing:.6em; text-indent:.6em;
+    padding:12px; border:1px solid var(--line); border-radius:10px; background:#fff;
+  }
+  #pinBtn{
+    width:100%; margin-top:14px; padding:14px; border:none; border-radius:10px;
+    background:var(--accent); color:#fff; font-size:16px; letter-spacing:.2em; cursor:pointer;
+  }
+  #pinError{ color:var(--alert); font-size:12px; margin-top:10px; min-height:16px; }
+
+  /* メイン */
+  #mainView{ display:none; }
+  .topbar{
+    position:sticky; top:0; z-index:10; background:#fff; border-bottom:1px solid var(--line);
+    padding:12px 16px;
+  }
+  .topbar-row{ max-width:640px; margin:0 auto; display:flex; align-items:flex-end; gap:18px; }
+  .stat{ flex:1; }
+  .stat-label{ font-size:11px; color:var(--muted); letter-spacing:.12em; }
+  .stat-value{ font-family:"Hiragino Mincho ProN","Yu Mincho",serif; font-size:27px; font-weight:700; }
+  .stat-value.pending{ color:var(--alert); }
+  .conn{ font-size:10px; color:var(--muted); text-align:right; }
+  main{ max-width:640px; margin:0 auto; padding:14px 14px 0; }
+  .order-card{
+    background:#fff; border:1px solid var(--line); border-radius:14px;
+    padding:16px; margin-bottom:12px; box-shadow:0 2px 8px rgba(60,55,40,.05);
+  }
+  .order-card.is-new{ border-color:var(--alert); border-width:2px; }
+  .oc-head{ display:flex; align-items:baseline; gap:12px; }
+  .oc-seat{
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
+    font-size:30px; font-weight:700;
+  }
+  .oc-no{ font-size:15px; color:var(--muted); }
+  .oc-elapsed{ margin-left:auto; font-size:13px; color:var(--muted); }
+  .oc-elapsed.late{ color:var(--alert); font-weight:700; }
+  .oc-lines{ margin-top:10px; font-size:15px; line-height:1.75; }
+  .oc-lines .lq{ color:var(--muted); font-size:13px; }
+  .oc-total{
+    margin-top:10px; text-align:right;
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
+    font-size:26px; font-weight:700;
+  }
+  .oc-total .tax{ font-size:11px; color:var(--muted); font-family:inherit; font-weight:400; }
+  .oc-btn{
+    width:100%; margin-top:12px; padding:15px; border-radius:10px; border:none;
+    font-size:16px; letter-spacing:.15em; cursor:pointer; font-weight:600;
+  }
+  .oc-btn.to-served{ background:var(--accent); color:#fff; }
+  .oc-btn.to-new{ background:#fff; color:var(--muted); border:1px solid var(--line); }
+  .order-card.is-served{ opacity:.55; }
+  .empty{ text-align:center; color:var(--muted); font-size:14px; padding:44px 0; }
+  .section-title{
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
+    font-size:16px; letter-spacing:.25em; margin:30px 0 10px; color:var(--accent-dark);
+  }
+  /* メニュー管理 */
+  .menu-row{
+    background:#fff; border:1px solid var(--line); border-radius:12px;
+    padding:12px; margin-bottom:10px;
+  }
+  .menu-row .mr-name{ font-size:15px; font-weight:600; }
+  .menu-row .mr-cat{ font-size:11px; color:var(--muted); margin-left:8px; }
+  .mr-fields{ display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; align-items:center; }
+  .mr-fields label{ font-size:11px; color:var(--muted); }
+  .mr-fields input[type=text], .mr-fields input[type=number]{
+    font-size:15px; padding:8px; border:1px solid var(--line); border-radius:8px; background:#fff;
+  }
+  .mr-fields input.price{ width:100px; }
+  .mr-fields input.sort{ width:64px; }
+  .mr-fields input.name-in{ width:100%; }
+  .mr-fields input.desc-in{ width:100%; }
+  .mr-fields select{ font-size:14px; padding:8px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+  .soldout-toggle{
+    display:flex; align-items:center; gap:6px; font-size:13px;
+    padding:8px 12px; border:1px solid var(--line); border-radius:8px; background:#fff; cursor:pointer;
+  }
+  .soldout-toggle.on{ background:#f0e9e2; border-color:var(--alert); color:var(--alert); font-weight:700; }
+  .small-btn{
+    padding:9px 14px; border-radius:8px; border:1px solid var(--line);
+    background:#fff; font-size:13px; cursor:pointer;
+  }
+  .small-btn.primary{ background:var(--accent); color:#fff; border-color:var(--accent); }
+  .small-btn.danger{ color:var(--alert); border-color:#e0c4bd; }
+  .add-form{ background:#fff; border:1px dashed var(--line); border-radius:12px; padding:12px; }
+  .error-box{
+    max-width:640px; margin:14px auto 0; padding:14px 18px; border:1px solid #d8a7a0;
+    background:#fdf3f1; border-radius:10px; font-size:13px; line-height:1.8; display:none;
+  }
+  .wrap-pad{ padding:0 14px; }
+</style>
+</head>
+<body>
+
+<!-- PIN -->
+<div id="pinView">
+  <div class="brand">YOHAKU</div>
+  <p>注文管理画面 ｜ PINを入力してください</p>
+  <input id="pinInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="12" autocomplete="off" placeholder="PIN">
+  <button id="pinBtn">開く</button>
+  <div id="pinError"></div>
+</div>
+
+<!-- メイン -->
+<div id="mainView">
+  <div class="topbar">
+    <div class="topbar-row">
+      <div class="stat">
+        <div class="stat-label">未提供</div>
+        <div class="stat-value pending" id="pendingCount">0 件</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">本日の売上（税込）</div>
+        <div class="stat-value" id="salesTotal">¥0</div>
+      </div>
+      <div class="conn" id="connStatus">接続中…</div>
+    </div>
+  </div>
+
+  <div class="wrap-pad"><div class="error-box" id="errorBox"></div></div>
+
+  <main>
+    <div id="ordersRoot"><div class="empty">読み込んでいます…</div></div>
+
+    <div class="section-title">メニュー管理</div>
+    <div id="menuRoot"></div>
+
+    <div class="section-title">品目を追加</div>
+    <div class="add-form">
+      <div class="mr-fields">
+        <input type="text" class="name-in" id="addName" placeholder="品目名">
+        <input type="text" class="desc-in" id="addDesc" placeholder="説明（任意）">
+        <label>価格 <input type="number" class="price" id="addPrice" min="0" step="1" placeholder="900"></label>
+        <select id="addCategory">
+          <option value="food">FOOD</option>
+          <option value="drink">球磨焼酎</option>
+        </select>
+        <label>並び順 <input type="number" class="sort" id="addSort" value="50"></label>
+        <button class="small-btn primary" id="addBtn">追加する</button>
+      </div>
+    </div>
+    <p style="font-size:11px;color:var(--muted);margin-top:14px;line-height:1.8">
+      価格は税込・円（整数）で入力してください。売り切れ切替と価格変更は即座にお客様の画面へ反映されます。
+    </p>
+  </main>
+</div>
+
+<script src="./config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function(){
+  "use strict";
+  var cfg = window.YOHAKU_CONFIG || {};
+  var errorBox = document.getElementById('errorBox');
+  function showError(msg){
+    errorBox.style.display = 'block';
+    errorBox.textContent = msg;
+  }
+  function yen(n){ return '¥' + n.toLocaleString('ja-JP'); }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
+    });
+  }
+
+  var configOk = cfg.SUPABASE_URL && cfg.SUPABASE_URL.indexOf('YOUR_') !== 0 &&
+                 cfg.SUPABASE_ANON_KEY && cfg.SUPABASE_ANON_KEY.indexOf('YOUR_') !== 0;
+  if (!configOk) {
+    document.querySelector('#pinView p').textContent =
+      '設定が完了していません。config.js に Supabase の URL と anon key を設定してください。';
+    document.getElementById('pinBtn').disabled = true;
+    document.getElementById('pinInput').disabled = true;
+    return;
+  }
+  var sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+
+  // ---------- PIN ----------
+  var pinView = document.getElementById('pinView');
+  var mainView = document.getElementById('mainView');
+  var started = false;
+
+  function tryStart(){
+    if (started) return;
+    started = true;
+    pinView.style.display = 'none';
+    mainView.style.display = 'block';
+    startApp();
+  }
+  if (sessionStorage.getItem('yohaku_staff') === '1') tryStart();
+
+  document.getElementById('pinBtn').addEventListener('click', checkPin);
+  document.getElementById('pinInput').addEventListener('keydown', function(e){
+    if (e.key === 'Enter') checkPin();
+  });
+  function checkPin(){
+    var v = document.getElementById('pinInput').value;
+    if (v === String(cfg.STAFF_PIN || '1234')) {
+      sessionStorage.setItem('yohaku_staff', '1');
+      tryStart();
+    } else {
+      document.getElementById('pinError').textContent = 'PINが違います';
+    }
+  }
+
+  // ---------- 本体 ----------
+  var orders = [];
+  var pollingTimer = null;
+  var connStatus = document.getElementById('connStatus');
+
+  function todayStartISO(){
+    var d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.toISOString();
+  }
+
+  function loadOrders(){
+    return sb.from('orders').select('*')
+      .gte('created_at', todayStartISO())
+      .order('created_at', { ascending: false })
+      .then(function(res){
+        if (res.error) { showError('注文の取得に失敗しました。再読み込みしてください。'); return; }
+        orders = res.data || [];
+        renderOrders();
+        renderStats();
+      });
+  }
+
+  function renderStats(){
+    var pending = 0, sales = 0;
+    orders.forEach(function(o){
+      sales += o.total;
+      if (o.status === 'new') pending++;
+    });
+    document.getElementById('pendingCount').textContent = pending + ' 件';
+    document.getElementById('salesTotal').textContent = yen(sales);
+  }
+
+  function elapsedText(iso){
+    var min = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+    if (min < 1) return 'たった今';
+    if (min < 60) return min + '分前';
+    return Math.floor(min / 60) + '時間' + (min % 60) + '分前';
+  }
+
+  function renderOrders(){
+    var root = document.getElementById('ordersRoot');
+    root.innerHTML = '';
+    if (orders.length === 0) {
+      root.innerHTML = '<div class="empty">本日の注文はまだありません</div>';
+      return;
+    }
+    // 未提供を上（新しい順）に、提供済みを下に
+    var sorted = orders.slice().sort(function(a, b){
+      if ((a.status === 'new') !== (b.status === 'new')) return a.status === 'new' ? -1 : 1;
+      return new Date(b.created_at) - new Date(a.created_at);
+    });
+
+    sorted.forEach(function(o){
+      var card = document.createElement('div');
+      card.className = 'order-card' + (o.status === 'new' ? ' is-new' : ' is-served');
+
+      var linesHtml = (o.lines || []).map(function(l){
+        return escapeHtml(l.name) + ' <span class="lq">×' + l.qty + '（' + yen(l.price) + '）</span>';
+      }).join('<br>');
+
+      var elapsedMin = Math.floor((Date.now() - new Date(o.created_at).getTime()) / 60000);
+      var late = o.status === 'new' && elapsedMin >= 10;
+
+      card.innerHTML =
+        '<div class="oc-head">' +
+          '<span class="oc-seat">' + o.seat_no + '番席</span>' +
+          '<span class="oc-no">No.' + o.order_no + '</span>' +
+          '<span class="oc-elapsed' + (late ? ' late' : '') + '" data-elapsed="' + o.created_at + '">' + elapsedText(o.created_at) + '</span>' +
+        '</div>' +
+        '<div class="oc-lines">' + linesHtml + '</div>' +
+        '<div class="oc-total">' + yen(o.total) + ' <span class="tax">税込</span></div>';
+
+      var btn = document.createElement('button');
+      if (o.status === 'new') {
+        btn.className = 'oc-btn to-served';
+        btn.textContent = '提供済みにする';
+        btn.addEventListener('click', function(){ setStatus(o.id, 'served', btn); });
+      } else {
+        btn.className = 'oc-btn to-new';
+        btn.textContent = '未提供に戻す';
+        btn.addEventListener('click', function(){ setStatus(o.id, 'new', btn); });
+      }
+      card.appendChild(btn);
+      root.appendChild(card);
+    });
+  }
+
+  function setStatus(id, status, btn){
+    btn.disabled = true;
+    sb.from('orders').update({ status: status }).eq('id', id)
+      .then(function(res){
+        btn.disabled = false;
+        if (res.error) { showError('状態の更新に失敗しました。'); return; }
+        orders.forEach(function(o){ if (o.id === id) o.status = status; });
+        renderOrders();
+        renderStats();
+      });
+  }
+
+  // 経過時間の表示を30秒ごとに更新
+  setInterval(function(){
+    document.querySelectorAll('[data-elapsed]').forEach(function(el){
+      el.textContent = elapsedText(el.getAttribute('data-elapsed'));
+    });
+  }, 30000);
+
+  function startPolling(){
+    if (pollingTimer) return;
+    connStatus.textContent = '自動更新（5秒間隔）';
+    pollingTimer = setInterval(loadOrders, 5000);
+  }
+
+  function startRealtime(){
+    var channel = sb.channel('yohaku-orders')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, function(){
+        loadOrders();
+      })
+      .subscribe(function(status){
+        if (status === 'SUBSCRIBED') {
+          connStatus.textContent = 'リアルタイム接続中';
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          startPolling();
+        }
+      });
+    // 接続が確立しないままの場合の保険
+    setTimeout(function(){
+      if (connStatus.textContent === '接続中…') startPolling();
+    }, 8000);
+  }
+
+  // ---------- メニュー管理 ----------
+  var menuItems = [];
+  function loadMenu(){
+    sb.from('menu_items').select('*')
+      .order('category', { ascending: true })
+      .order('sort', { ascending: true })
+      .order('id', { ascending: true })
+      .then(function(res){
+        if (res.error) { showError('メニューの取得に失敗しました。'); return; }
+        menuItems = res.data || [];
+        renderMenuAdmin();
+      });
+  }
+
+  function renderMenuAdmin(){
+    var root = document.getElementById('menuRoot');
+    root.innerHTML = '';
+    if (menuItems.length === 0) {
+      root.innerHTML = '<div class="empty">メニューが登録されていません</div>';
+      return;
+    }
+    menuItems.forEach(function(it){
+      var row = document.createElement('div');
+      row.className = 'menu-row';
+      var catLabel = it.category === 'drink' ? '球磨焼酎' : 'FOOD';
+      row.innerHTML =
+        '<div><span class="mr-name">' + escapeHtml(it.name) + '</span><span class="mr-cat">' + catLabel + '</span></div>';
+
+      var fields = document.createElement('div');
+      fields.className = 'mr-fields';
+
+      var priceLabel = document.createElement('label');
+      priceLabel.textContent = '価格 ';
+      var priceIn = document.createElement('input');
+      priceIn.type = 'number'; priceIn.className = 'price';
+      priceIn.min = '0'; priceIn.step = '1'; priceIn.value = it.price;
+      priceLabel.appendChild(priceIn);
+      fields.appendChild(priceLabel);
+
+      var sortLabel = document.createElement('label');
+      sortLabel.textContent = '並び順 ';
+      var sortIn = document.createElement('input');
+      sortIn.type = 'number'; sortIn.className = 'sort'; sortIn.value = it.sort;
+      sortLabel.appendChild(sortIn);
+      fields.appendChild(sortLabel);
+
+      var soldBtn = document.createElement('button');
+      soldBtn.className = 'soldout-toggle' + (it.sold_out ? ' on' : '');
+      soldBtn.textContent = it.sold_out ? '売り切れ中' : '販売中';
+      soldBtn.addEventListener('click', function(){
+        sb.from('menu_items').update({ sold_out: !it.sold_out }).eq('id', it.id)
+          .then(function(res){
+            if (res.error) { showError('売り切れ切替に失敗しました。'); return; }
+            it.sold_out = !it.sold_out;
+            renderMenuAdmin();
+          });
+      });
+      fields.appendChild(soldBtn);
+
+      var saveBtn = document.createElement('button');
+      saveBtn.className = 'small-btn primary';
+      saveBtn.textContent = '保存';
+      saveBtn.addEventListener('click', function(){
+        var p = parseInt(priceIn.value, 10);
+        var s = parseInt(sortIn.value, 10);
+        if (isNaN(p) || p < 0) { showError('価格は0以上の整数で入力してください。'); return; }
+        if (isNaN(s)) s = it.sort;
+        saveBtn.disabled = true;
+        sb.from('menu_items').update({ price: p, sort: s }).eq('id', it.id)
+          .then(function(res){
+            saveBtn.disabled = false;
+            if (res.error) { showError('メニューの保存に失敗しました。'); return; }
+            it.price = p; it.sort = s;
+          });
+      });
+      fields.appendChild(saveBtn);
+
+      var delBtn = document.createElement('button');
+      delBtn.className = 'small-btn danger';
+      delBtn.textContent = '削除';
+      delBtn.addEventListener('click', function(){
+        if (!window.confirm('「' + it.name + '」を削除しますか？')) return;
+        sb.from('menu_items').delete().eq('id', it.id)
+          .then(function(res){
+            if (res.error) { showError('削除に失敗しました。'); return; }
+            loadMenu();
+          });
+      });
+      fields.appendChild(delBtn);
+
+      row.appendChild(fields);
+      root.appendChild(row);
+    });
+  }
+
+  document.getElementById('addBtn').addEventListener('click', function(){
+    var name = document.getElementById('addName').value.trim();
+    var desc = document.getElementById('addDesc').value.trim();
+    var price = parseInt(document.getElementById('addPrice').value, 10);
+    var category = document.getElementById('addCategory').value;
+    var sort = parseInt(document.getElementById('addSort').value, 10);
+    if (!name) { showError('品目名を入力してください。'); return; }
+    if (isNaN(price) || price < 0) { showError('価格は0以上の整数で入力してください。'); return; }
+    if (isNaN(sort)) sort = 50;
+    sb.from('menu_items').insert({
+      name: name, description: desc, price: price, category: category, sort: sort, sold_out: false
+    }).then(function(res){
+      if (res.error) { showError('品目の追加に失敗しました。'); return; }
+      document.getElementById('addName').value = '';
+      document.getElementById('addDesc').value = '';
+      document.getElementById('addPrice').value = '';
+      loadMenu();
+    });
+  });
+
+  function startApp(){
+    loadOrders();
+    loadMenu();
+    startRealtime();
+  }
+})();
+</script>
+</body>
+</html>
