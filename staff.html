@@ -72,6 +72,46 @@
   .oc-btn.to-served{ background:var(--accent); color:#fff; }
   .oc-btn.to-new{ background:#fff; color:var(--muted); border:1px solid var(--line); }
   .order-card.is-served{ opacity:.55; }
+  /* テーブル（席）カード */
+  .seat-card{
+    background:#fff; border:1px solid var(--line); border-radius:14px;
+    padding:16px; margin-bottom:14px; box-shadow:0 2px 8px rgba(60,55,40,.05);
+  }
+  .seat-card.has-new{ border-color:var(--alert); border-width:2px; }
+  .seat-card.all-paid{ opacity:.55; }
+  .seat-head{ display:flex; align-items:flex-start; gap:14px; }
+  .seat-name{
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
+    font-size:32px; font-weight:700; white-space:nowrap;
+  }
+  .seat-amounts{ margin-left:auto; text-align:right; }
+  .seat-amounts span{ display:block; }
+  .seat-total{
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
+    font-size:22px; font-weight:700;
+  }
+  .seat-unpaid{ font-size:14px; color:var(--alert); font-weight:700; margin-top:2px; }
+  .seat-unpaid.none{ color:var(--muted); font-weight:400; }
+  .so-block{ border-top:1px dashed var(--line); margin-top:12px; padding-top:12px; }
+  .so-block.is-served{ opacity:.55; }
+  .so-head{ display:flex; align-items:baseline; gap:10px; }
+  .so-no{ font-size:15px; font-weight:600; }
+  .paid-badge{
+    font-size:11px; color:#fff; background:var(--accent); border-radius:6px;
+    padding:2px 8px; letter-spacing:.1em; white-space:nowrap;
+  }
+  .so-total{
+    margin-top:8px; text-align:right;
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
+    font-size:20px; font-weight:700;
+  }
+  .so-total .tax{ font-size:11px; color:var(--muted); font-family:inherit; font-weight:400; }
+  .pay-btn{
+    width:100%; margin-top:16px; padding:15px; border-radius:10px; border:none;
+    font-size:16px; letter-spacing:.15em; cursor:pointer; font-weight:600;
+  }
+  .pay-btn.to-pay{ background:var(--accent-dark); color:#fff; }
+  .pay-btn.done{ background:#fff; color:var(--muted); border:1px solid var(--line); cursor:default; }
   .empty{ text-align:center; color:var(--muted); font-size:14px; padding:44px 0; }
   .section-title{
     font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
@@ -135,6 +175,10 @@
       <div class="stat">
         <div class="stat-label">本日の売上（税込）</div>
         <div class="stat-value" id="salesTotal">¥0</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">未決済合計</div>
+        <div class="stat-value pending" id="unpaidTotal">¥0</div>
       </div>
       <div class="conn" id="connStatus">接続中…</div>
     </div>
@@ -237,7 +281,7 @@
   }
 
   function loadOrders(){
-    return sb.from('orders').select('*')
+    return sb.from('orders').select('id, order_no, seat_no, lines, total, status, paid, created_at')
       .gte('created_at', todayStartISO())
       .order('created_at', { ascending: false })
       .then(function(res){
@@ -249,13 +293,15 @@
   }
 
   function renderStats(){
-    var pending = 0, sales = 0;
+    var pending = 0, sales = 0, unpaid = 0;
     orders.forEach(function(o){
       sales += o.total;
       if (o.status === 'new') pending++;
+      if (!o.paid) unpaid += o.total;
     });
     document.getElementById('pendingCount').textContent = pending + ' 件';
     document.getElementById('salesTotal').textContent = yen(sales);
+    document.getElementById('unpaidTotal').textContent = yen(unpaid);
   }
 
   function elapsedText(iso){
@@ -272,43 +318,96 @@
       root.innerHTML = '<div class="empty">本日の注文はまだありません</div>';
       return;
     }
-    // 未提供を上（新しい順）に、提供済みを下に
-    var sorted = orders.slice().sort(function(a, b){
-      if ((a.status === 'new') !== (b.status === 'new')) return a.status === 'new' ? -1 : 1;
-      return new Date(b.created_at) - new Date(a.created_at);
+    // 席ごとにグループ化（席内の注文は新しい順）
+    var bySeat = {};
+    orders.forEach(function(o){
+      if (!bySeat[o.seat_no]) bySeat[o.seat_no] = [];
+      bySeat[o.seat_no].push(o);
+    });
+    var seats = Object.keys(bySeat).map(function(k){
+      var list = bySeat[k].slice().sort(function(a, b){
+        return new Date(b.created_at) - new Date(a.created_at);
+      });
+      var total = 0, unpaid = 0, hasUnpaidOrder = false, hasNew = false;
+      list.forEach(function(o){
+        total += o.total;
+        if (!o.paid) { unpaid += o.total; hasUnpaidOrder = true; }
+        if (o.status === 'new') hasNew = true;
+      });
+      return {
+        seatNo: Number(k), list: list, total: total, unpaid: unpaid,
+        hasUnpaidOrder: hasUnpaidOrder, hasNew: hasNew, lastAt: list[0].created_at
+      };
+    });
+    // 未決済の席を上に（その中では最終注文が新しい順）、決済済みだけの席は下に
+    seats.sort(function(a, b){
+      if (a.hasUnpaidOrder !== b.hasUnpaidOrder) return a.hasUnpaidOrder ? -1 : 1;
+      return new Date(b.lastAt) - new Date(a.lastAt);
     });
 
-    sorted.forEach(function(o){
+    seats.forEach(function(seat){
       var card = document.createElement('div');
-      card.className = 'order-card' + (o.status === 'new' ? ' is-new' : ' is-served');
+      card.className = 'seat-card' +
+        (seat.hasNew ? ' has-new' : '') +
+        (!seat.hasUnpaidOrder ? ' all-paid' : '');
 
-      var linesHtml = (o.lines || []).map(function(l){
-        return escapeHtml(l.name) + ' <span class="lq">×' + l.qty + '（' + yen(l.price) + '）</span>';
-      }).join('<br>');
+      var head = document.createElement('div');
+      head.className = 'seat-head';
+      head.innerHTML =
+        '<span class="seat-name">' + seat.seatNo + '番席</span>' +
+        '<span class="seat-amounts">' +
+          '<span class="seat-total">合計 ' + yen(seat.total) + '</span>' +
+          (seat.hasUnpaidOrder
+            ? '<span class="seat-unpaid">未決済 ' + yen(seat.unpaid) + '</span>'
+            : '<span class="seat-unpaid none">決済済み</span>') +
+        '</span>';
+      card.appendChild(head);
 
-      var elapsedMin = Math.floor((Date.now() - new Date(o.created_at).getTime()) / 60000);
-      var late = o.status === 'new' && elapsedMin >= 10;
+      seat.list.forEach(function(o){
+        var block = document.createElement('div');
+        block.className = 'so-block' + (o.status === 'served' ? ' is-served' : '');
 
-      card.innerHTML =
-        '<div class="oc-head">' +
-          '<span class="oc-seat">' + o.seat_no + '番席</span>' +
-          '<span class="oc-no">No.' + o.order_no + '</span>' +
-          '<span class="oc-elapsed' + (late ? ' late' : '') + '" data-elapsed="' + o.created_at + '">' + elapsedText(o.created_at) + '</span>' +
-        '</div>' +
-        '<div class="oc-lines">' + linesHtml + '</div>' +
-        '<div class="oc-total">' + yen(o.total) + ' <span class="tax">税込</span></div>';
+        var linesHtml = (o.lines || []).map(function(l){
+          return escapeHtml(l.name) + ' <span class="lq">×' + l.qty + '（' + yen(l.price) + '）</span>';
+        }).join('<br>');
 
-      var btn = document.createElement('button');
-      if (o.status === 'new') {
-        btn.className = 'oc-btn to-served';
-        btn.textContent = '提供済みにする';
-        btn.addEventListener('click', function(){ setStatus(o.id, 'served', btn); });
+        var elapsedMin = Math.floor((Date.now() - new Date(o.created_at).getTime()) / 60000);
+        var late = o.status === 'new' && elapsedMin >= 10;
+
+        block.innerHTML =
+          '<div class="so-head">' +
+            '<span class="so-no">No.' + o.order_no + '</span>' +
+            (o.paid ? '<span class="paid-badge">決済済み</span>' : '') +
+            '<span class="oc-elapsed' + (late ? ' late' : '') + '" data-elapsed="' + o.created_at + '">' + elapsedText(o.created_at) + '</span>' +
+          '</div>' +
+          '<div class="oc-lines">' + linesHtml + '</div>' +
+          '<div class="so-total">' + yen(o.total) + ' <span class="tax">税込</span></div>';
+
+        var btn = document.createElement('button');
+        if (o.status === 'new') {
+          btn.className = 'oc-btn to-served';
+          btn.textContent = '提供済みにする';
+          btn.addEventListener('click', function(){ setStatus(o.id, 'served', btn); });
+        } else {
+          btn.className = 'oc-btn to-new';
+          btn.textContent = '未提供に戻す';
+          btn.addEventListener('click', function(){ setStatus(o.id, 'new', btn); });
+        }
+        block.appendChild(btn);
+        card.appendChild(block);
+      });
+
+      var payBtn = document.createElement('button');
+      if (seat.hasUnpaidOrder) {
+        payBtn.className = 'pay-btn to-pay';
+        payBtn.textContent = '決済済みにする';
+        payBtn.addEventListener('click', function(){ setPaidForSeat(seat.seatNo, payBtn); });
       } else {
-        btn.className = 'oc-btn to-new';
-        btn.textContent = '未提供に戻す';
-        btn.addEventListener('click', function(){ setStatus(o.id, 'new', btn); });
+        payBtn.className = 'pay-btn done';
+        payBtn.textContent = '決済済み';
+        payBtn.disabled = true;
       }
-      card.appendChild(btn);
+      card.appendChild(payBtn);
       root.appendChild(card);
     });
   }
@@ -320,6 +419,23 @@
         btn.disabled = false;
         if (res.error) { showError('状態の更新に失敗しました。'); return; }
         orders.forEach(function(o){ if (o.id === id) o.status = status; });
+        renderOrders();
+        renderStats();
+      });
+  }
+
+  // その席の本日の未決済注文をすべて決済済みにする
+  function setPaidForSeat(seatNo, btn){
+    if (!window.confirm(seatNo + '番席を決済済みにしますか？')) return;
+    btn.disabled = true;
+    sb.from('orders').update({ paid: true })
+      .eq('seat_no', seatNo)
+      .eq('paid', false)
+      .gte('created_at', todayStartISO())
+      .then(function(res){
+        btn.disabled = false;
+        if (res.error) { showError('決済状態の更新に失敗しました。'); return; }
+        orders.forEach(function(o){ if (o.seat_no === seatNo) o.paid = true; });
         renderOrders();
         renderStats();
       });
