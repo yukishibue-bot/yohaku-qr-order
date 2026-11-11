@@ -102,6 +102,50 @@
     border:1px solid var(--accent); border-radius:10px;
     font-size:14px; letter-spacing:.15em; padding:12px 24px; cursor:pointer;
   }
+  .ghost-btn{
+    background:#fff; color:var(--accent-dark);
+    border:1px solid var(--accent); border-radius:10px;
+    font-size:14px; letter-spacing:.15em; padding:12px 24px; cursor:pointer;
+  }
+  .status-link-wrap{ text-align:center; margin:26px 0 10px; }
+  .status-hint{ font-size:12px; color:#b0564a; margin-top:10px; }
+  #doneStatusBtn{ margin-top:14px; }
+  /* 注文状況画面 */
+  #statusView{ display:none; max-width:560px; margin:0 auto; padding:28px 16px 40px; }
+  #statusView .status-head{
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
+    font-size:20px; letter-spacing:.3em; text-indent:.3em; text-align:center; color:var(--accent-dark);
+  }
+  #statusView .status-seat{ text-align:center; font-size:13px; color:var(--muted); margin-top:8px; letter-spacing:.1em; }
+  .status-summary{
+    background:#fff; border:1px solid var(--line); border-radius:12px;
+    padding:16px 18px; margin-top:22px;
+  }
+  .status-total-row{ display:flex; align-items:baseline; justify-content:space-between; padding:4px 0; }
+  .status-total-row .st-label{ font-size:13px; color:var(--muted); letter-spacing:.08em; }
+  .status-total-row .st-value{
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
+    font-size:24px; font-weight:700;
+  }
+  .status-total-row.unpaid .st-value{ font-size:20px; color:#b0564a; }
+  .status-order{
+    background:#fff; border:1px solid var(--line); border-radius:12px;
+    padding:14px 18px; margin-top:14px;
+  }
+  .status-order-head{ display:flex; align-items:center; justify-content:space-between; }
+  .status-order-no{
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
+    font-size:16px; font-weight:700;
+  }
+  .status-order-amount{ font-size:16px; font-weight:700; }
+  .paid-badge{
+    display:inline-block; font-size:10px; color:#fff; background:var(--accent);
+    border-radius:4px; padding:2px 7px; margin-left:8px; letter-spacing:.1em; vertical-align:2px;
+  }
+  .status-lines{ font-size:13px; line-height:1.9; margin-top:8px; color:var(--ink); }
+  .status-empty{ text-align:center; color:var(--muted); font-size:14px; padding:36px 0 8px; }
+  .status-load-error{ text-align:center; color:#b0564a; font-size:13px; padding:24px 0 8px; }
+  #statusBackBtn{ display:block; margin:30px auto 0; }
   .loading{ text-align:center; color:var(--muted); font-size:13px; padding:40px 0; }
 </style>
 </head>
@@ -128,6 +172,11 @@
 
   <p class="notice">お支払いはレジにてお願いいたします。<br>追加のご注文も、この画面からどうぞ。</p>
 
+  <div class="status-link-wrap">
+    <button class="ghost-btn" id="statusBtn">ご注文状況を見る</button>
+    <p class="status-hint" id="statusHint" style="display:none">まず、お席の番号を選択してください。</p>
+  </div>
+
   <div class="footer-bar">
     <div class="footer-inner">
       <div class="total-box">
@@ -146,6 +195,25 @@
   <div class="done-total">合計（税込）<b id="doneTotal">¥0</b></div>
   <p class="done-msg">お料理の準備ができ次第、お席までお持ちします。<br>お支払いはレジにてお願いいたします。</p>
   <button id="againBtn">続けて注文する</button>
+  <br>
+  <button class="ghost-btn" id="doneStatusBtn">注文状況を見る</button>
+</div>
+
+<div id="statusView">
+  <div class="status-head">ご注文状況</div>
+  <div class="status-seat" id="statusSeat"></div>
+  <div class="status-summary">
+    <div class="status-total-row">
+      <span class="st-label">現在のお会計（合計）</span>
+      <span class="st-value" id="statusGrandTotal">¥0</span>
+    </div>
+    <div class="status-total-row unpaid">
+      <span class="st-label">未決済の残額</span>
+      <span class="st-value" id="statusUnpaid">¥0</span>
+    </div>
+  </div>
+  <div id="statusList"></div>
+  <button class="ghost-btn" id="statusBackBtn">メニューに戻る</button>
 </div>
 
 <script src="./config.js"></script>
@@ -192,6 +260,8 @@
     }
     seatSelect.addEventListener('change', function(){
       seatNo = seatSelect.value ? parseInt(seatSelect.value, 10) : null;
+      var hint = document.getElementById('statusHint');
+      if (hint && seatNo) hint.style.display = 'none';
       refreshOrderBtn();
     });
   }
@@ -361,6 +431,115 @@
     errorBox.style.display = 'none';
     loadMenu();
   });
+
+  // ---- 注文状況 ----
+  var orderView = document.getElementById('orderView');
+  var doneView = document.getElementById('doneView');
+  var statusView = document.getElementById('statusView');
+  var statusList = document.getElementById('statusList');
+  var statusTimer = null;
+
+  // JST 当日 0:00 の ISO 文字列（created_at の下限フィルタ用）
+  function todayStartISO(){
+    var parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(new Date());
+    var y = 0, m = 0, d = 0;
+    parts.forEach(function(p){
+      if (p.type === 'year') y = parseInt(p.value, 10);
+      if (p.type === 'month') m = parseInt(p.value, 10);
+      if (p.type === 'day') d = parseInt(p.value, 10);
+    });
+    // JST 0:00 = 前日 15:00 UTC
+    return new Date(Date.UTC(y, m - 1, d) - 9 * 60 * 60 * 1000).toISOString();
+  }
+
+  function renderStatus(orders){
+    var grand = 0, unpaid = 0;
+    statusList.innerHTML = '';
+    if (!orders.length) {
+      var empty = document.createElement('div');
+      empty.className = 'status-empty';
+      empty.textContent = 'まだ注文がありません';
+      statusList.appendChild(empty);
+    }
+    orders.forEach(function(o){
+      grand += o.total;
+      if (!o.paid) unpaid += o.total;
+      var card = document.createElement('div');
+      card.className = 'status-order';
+      var head = document.createElement('div');
+      head.className = 'status-order-head';
+      var noHtml = '注文番号 ' + o.order_no;
+      // お客様に見せる状態は「決済済み」のみ（提供ステータスは表示しない）
+      if (o.paid) noHtml += '<span class="paid-badge">決済済み</span>';
+      head.innerHTML =
+        '<span class="status-order-no">' + noHtml + '</span>' +
+        '<span class="status-order-amount">' + yen(o.total) + '</span>';
+      card.appendChild(head);
+      var lines = document.createElement('div');
+      lines.className = 'status-lines';
+      lines.innerHTML = (o.lines || []).map(function(l){
+        return escapeHtml(l.name) + ' ×' + l.qty;
+      }).join('<br>');
+      card.appendChild(lines);
+      statusList.appendChild(card);
+    });
+    document.getElementById('statusGrandTotal').textContent = yen(grand);
+    document.getElementById('statusUnpaid').textContent = yen(unpaid);
+  }
+
+  function loadStatus(){
+    if (!seatNo) return;
+    sb.from('orders')
+      .select('order_no, lines, total, status, paid, created_at')
+      .eq('seat_no', seatNo)
+      .gte('created_at', todayStartISO())
+      .order('order_no', { ascending: true })
+      .then(function(res){
+        if (res.error) {
+          statusList.innerHTML = '<div class="status-load-error">読み込みに失敗しました。しばらくすると自動で再読み込みします。</div>';
+          return;
+        }
+        renderStatus(res.data || []);
+      });
+  }
+
+  function stopStatusPolling(){
+    if (statusTimer) { clearInterval(statusTimer); statusTimer = null; }
+  }
+  function showStatus(){
+    if (!seatNo) {
+      // 席が未選択なら、既存の席セレクトへ誘導する
+      var hint = document.getElementById('statusHint');
+      if (hint) hint.style.display = 'block';
+      window.scrollTo(0, 0);
+      seatSelect.focus();
+      return;
+    }
+    document.getElementById('statusSeat').textContent = seatNo + ' 番席';
+    orderView.style.display = 'none';
+    doneView.style.display = 'none';
+    statusView.style.display = 'block';
+    window.scrollTo(0, 0);
+    loadStatus();
+    stopStatusPolling();
+    // 状況画面を開いている間だけ10秒ごとに自動更新（決済済みの変化などを反映）
+    statusTimer = setInterval(loadStatus, 10000);
+  }
+  function hideStatus(){
+    stopStatusPolling();
+    statusView.style.display = 'none';
+    doneView.style.display = 'none';
+    orderView.style.display = 'block';
+    errorBox.style.display = 'none';
+    window.scrollTo(0, 0);
+    loadMenu();
+  }
+
+  document.getElementById('statusBtn').addEventListener('click', showStatus);
+  document.getElementById('doneStatusBtn').addEventListener('click', showStatus);
+  document.getElementById('statusBackBtn').addEventListener('click', hideStatus);
 })();
 </script>
 </body>
