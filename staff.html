@@ -390,8 +390,11 @@
         <input type="text" class="desc-in" id="addDesc" placeholder="説明（任意）">
         <label>価格 <input type="number" class="price" id="addPrice" min="0" step="1" placeholder="900"></label>
         <select id="addCategory">
-          <option value="food">FOOD</option>
-          <option value="drink">球磨焼酎</option>
+          <option value="meat">お肉（数量限定）</option>
+          <option value="snack">おつまみ</option>
+          <option value="soup">汁物</option>
+          <option value="wine">ワイン</option>
+          <option value="shochu">球磨焼酎</option>
         </select>
         <label>並び順 <input type="number" class="sort" id="addSort" value="50"></label>
         <button class="small-btn primary" id="addBtn">追加する</button>
@@ -994,10 +997,10 @@
   }
 
   // ---------- メニュー管理 ----------
+  var CATEGORY_LABELS = { meat: 'お肉（数量限定）', snack: 'おつまみ', soup: '汁物', wine: 'ワイン', shochu: '球磨焼酎', food: 'FOOD', drink: '球磨焼酎' };
   var menuItems = [];
   function loadMenu(){
     sb.from('menu_items').select('*')
-      .order('category', { ascending: true })
       .order('sort', { ascending: true })
       .order('id', { ascending: true })
       .then(function(res){
@@ -1018,7 +1021,7 @@
     menuItems.forEach(function(it){
       var row = document.createElement('div');
       row.className = 'menu-row';
-      var catLabel = it.category === 'drink' ? '球磨焼酎' : 'FOOD';
+      var catLabel = CATEGORY_LABELS[it.category] || it.category;
       row.innerHTML =
         '<div><span class="mr-name">' + escapeHtml(it.name) + '</span><span class="mr-cat">' + catLabel + '</span></div>';
 
