@@ -78,7 +78,11 @@
     padding:16px; margin-bottom:14px; box-shadow:0 2px 8px rgba(60,55,40,.05);
   }
   .seat-card.has-new{ border-color:var(--alert); border-width:2px; }
-  .seat-card.all-paid{ opacity:.55; }
+    .seat-card.all-paid{ opacity:.55; }
+  .paid-tab-btn{
+    width:100%; padding:14px; margin:6px 0 14px; background:#fff; color:var(--muted);
+    border:1px solid var(--line); border-radius:12px; font-size:15px; letter-spacing:.12em; cursor:pointer;
+  }
   .seat-head{ display:flex; align-items:flex-start; gap:14px; }
   .seat-name{
     font-family:"Hiragino Mincho ProN","Yu Mincho",serif;
@@ -483,6 +487,7 @@
 
   // ---------- 本体 ----------
   var orders = [];
+  var paidTabOpen = false;
   var pollingTimer = null;
   var connStatus = document.getElementById('connStatus');
 
@@ -563,7 +568,10 @@
       return new Date(b.lastAt) - new Date(a.lastAt);
     });
 
-    seats.forEach(function(seat){
+    var activeSeats = seats.filter(function(s){ return s.hasUnpaidOrder; });
+    var paidSeats = seats.filter(function(s){ return !s.hasUnpaidOrder; });
+
+    function buildSeatCard(seat){
       var card = document.createElement('div');
       card.className = 'seat-card' +
         (seat.hasNew ? ' has-new' : '') +
@@ -651,8 +659,37 @@
         payBtn.disabled = true;
       }
       card.appendChild(payBtn);
-      root.appendChild(card);
-    });
+      return card;
+    }
+
+    if (activeSeats.length === 0) {
+      var noneEl = document.createElement('div');
+      noneEl.className = 'empty';
+      noneEl.textContent = '未決済の席はありません';
+      root.appendChild(noneEl);
+    }
+    activeSeats.forEach(function(seat){ root.appendChild(buildSeatCard(seat)); });
+
+    // 決済済みの席は一番下に「決済済み」タブとしてまとめ、初期状態は閉じる（データは売上集計に残る）
+    if (paidSeats.length) {
+      var paidBox = document.createElement('div');
+      paidBox.style.display = paidTabOpen ? 'block' : 'none';
+      var tabBtn = document.createElement('button');
+      tabBtn.className = 'paid-tab-btn';
+      tabBtn.type = 'button';
+      function paintTabBtn(){
+        tabBtn.textContent = '決済済み（' + paidSeats.length + '席） ' + (paidTabOpen ? '▲ 閉じる' : '▼ 開く');
+      }
+      paintTabBtn();
+      tabBtn.addEventListener('click', function(){
+        paidTabOpen = !paidTabOpen;
+        paidBox.style.display = paidTabOpen ? 'block' : 'none';
+        paintTabBtn();
+      });
+      paidSeats.forEach(function(seat){ paidBox.appendChild(buildSeatCard(seat)); });
+      root.appendChild(tabBtn);
+      root.appendChild(paidBox);
+    }
   }
 
   function setStatus(id, status, btn){
