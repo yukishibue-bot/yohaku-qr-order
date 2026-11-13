@@ -541,7 +541,9 @@
       bySeat[o.seat_no].push(o);
     });
     var seats = Object.keys(bySeat).map(function(k){
+      // 席内でも未決済の注文を上に、決済済みの注文は下に（それぞれ新しい順）
       var list = bySeat[k].slice().sort(function(a, b){
+        if (!!a.paid !== !!b.paid) return a.paid ? 1 : -1;
         return new Date(b.created_at) - new Date(a.created_at);
       });
       var total = 0, unpaid = 0, hasUnpaidOrder = false, hasNew = false;
@@ -679,6 +681,9 @@
         orders.forEach(function(o){ if (o.seat_no === seatNo) o.paid = true; });
         renderOrders();
         renderStats();
+        // サーバー側の最新状態を取り直して、決済済みの席が確実に一番下へ移動したことを保証する
+        // （リアルタイム接続が切れている端末でも、押した直後に並びが変わるように）
+        loadOrders();
       });
   }
 
