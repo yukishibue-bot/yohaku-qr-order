@@ -400,6 +400,7 @@
           <option value="glass_wine">グラスワイン</option>
           <option value="bottle_wine">ボトルワイン</option>
           <option value="shochu">球磨焼酎</option>
+          <option value="beer">ビール</option>
           <option value="soft_drink">ソフトドリンク</option>
         </select>
         <label>並び順 <input type="number" class="sort" id="addSort" value="50"></label>
@@ -1041,7 +1042,7 @@
   }
 
   // ---------- メニュー管理 ----------
-  var CATEGORY_LABELS = { meat: 'お肉（数量限定）', snack: 'おつまみ', soup: '汁物', glass_wine: 'グラスワイン', bottle_wine: 'ボトルワイン', wine: 'ワイン', shochu: '球磨焼酎', soft_drink: 'ソフトドリンク', food: 'FOOD', drink: '球磨焼酎' };
+  var CATEGORY_LABELS = { meat: 'お肉（数量限定）', snack: 'おつまみ', soup: '汁物', glass_wine: 'グラスワイン', bottle_wine: 'ボトルワイン', wine: 'ワイン', shochu: '球磨焼酎', beer: 'ビール', soft_drink: 'ソフトドリンク', food: 'FOOD', drink: '球磨焼酎' };
   var menuItems = [];
   function loadMenu(){
     sb.from('menu_items').select('*')
