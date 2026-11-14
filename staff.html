@@ -116,6 +116,7 @@
   }
   .pay-btn.to-pay{ background:var(--accent-dark); color:#fff; }
   .pay-btn.done{ background:#fff; color:var(--muted); border:1px solid var(--line); cursor:default; }
+  .pay-btn.square{ background:#1a1a18; color:#fff; margin-top:10px; }
   /* 注文の変更・取消ボタン */
   .so-actions{ display:flex; gap:8px; margin-top:10px; }
   .so-actions .small-btn{ flex:1; padding:11px; font-size:14px; }
@@ -649,6 +650,14 @@
       seatAddBtn.addEventListener('click', function(){ openStaffPanel(seat.seatNo); });
       card.appendChild(seatAddBtn);
 
+      if (seat.hasUnpaidOrder && cfg.SQUARE_APPLICATION_ID) {
+        var sqBtn = document.createElement('button');
+        sqBtn.className = 'pay-btn square';
+        sqBtn.textContent = 'Squareで決済（' + yen(seat.unpaid) + '）';
+        sqBtn.addEventListener('click', function(){ startSquarePayment(seat); });
+        card.appendChild(sqBtn);
+      }
+
       var payBtn = document.createElement('button');
       if (seat.hasUnpaidOrder) {
         payBtn.className = 'pay-btn to-pay';
@@ -721,6 +730,120 @@
         renderStats();
         // サーバー側の最新状態を取り直して、決済済みの席が確実に一番下へ移動したことを保証する
         // （リアルタイム接続が切れている端末でも、押した直後に並びが変わるように）
+        loadOrders();
+      });
+  }
+
+  // ---------- Square連携（Point of Sale API / Mobile Web、iPhone前提） ----------
+  // 仕様: developer.squareup.com/docs/pos-api/build-mobile-web / web-technical-reference
+  // - 同じiPhoneの Square POS アプリを金額入りで開き、戻りの callback で結果を受け取る
+  // - 渡せるのは合計金額と notes のみ。品目明細は notes にテキストで入れる（Square側はカスタム金額1行）
+  // - tender: CREDIT_CARD（日本では電子マネーもこの指定で対応）/ PAYPAY / CASH / OTHER
+  // - clear_default_fees: true で Square側の既定税・手数料の二重適用を避ける（金額は税込で確定済みのため）
+  var squareReturnHandled = false;
+
+  // 起動直後に callback の data を拾う（PIN画面表示中でも失わないよう先に退避し、URLからは消す）
+  var squareCallback = null;
+  (function captureSquareCallback(){
+    try {
+      var params = new URLSearchParams(window.location.search);
+      var raw = params.get('data');
+      if (!raw) return;
+      var parsed = JSON.parse(raw);
+      if (parsed && (parsed.status || parsed.transaction_id || parsed.error_code)) {
+        squareCallback = parsed;
+        try { localStorage.setItem('yohaku_square_callback', JSON.stringify(parsed)); } catch (e) {}
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      }
+    } catch (e) { /* data が無い通常起動では何もしない */ }
+  })();
+
+  function startSquarePayment(seat){
+    if (!cfg.SQUARE_APPLICATION_ID) { showError('Square連携が未設定です（Application ID）。'); return; }
+    var unpaidOrders = seat.list.filter(function(o){ return !o.paid; });
+    if (unpaidOrders.length === 0) return;
+    var amount = seat.unpaid;
+    if (!window.confirm(seat.seatNo + '番席 ' + yen(amount) + ' をSquareで決済しますか？\nSquareアプリが開きます。')) return;
+
+    // notes: Squareのレシート／管理画面に残るメモ。品目明細はテキストが上限
+    var agg = {};
+    unpaidOrders.forEach(function(o){
+      (o.lines || []).forEach(function(l){
+        agg[l.name] = (agg[l.name] || 0) + l.qty;
+      });
+    });
+    var detail = Object.keys(agg).map(function(name){ return name + '×' + agg[name]; }).join('、');
+    var orderNos = unpaidOrders.map(function(o){ return 'No.' + o.order_no; }).join('/');
+    var notes = ('YOHAKU ' + seat.seatNo + '番席 ' + orderNos + ' ' + detail).slice(0, 400);
+
+    var stateObj = { seat: seat.seatNo, amount: amount, at: Date.now() };
+    try {
+      localStorage.setItem('yohaku_square_pending', JSON.stringify(stateObj));
+    } catch (e) {}
+
+    var dataParameter = {
+      amount_money: { amount: amount, currency_code: 'JPY' },
+      callback_url: cfg.SQUARE_CALLBACK_URL || 'https://yohaku-qr-order.vercel.app/staff.html',
+      client_id: cfg.SQUARE_APPLICATION_ID,
+      version: '1.3',
+      notes: notes,
+      state: JSON.stringify(stateObj),
+      options: {
+        supported_tender_types: ['CREDIT_CARD', 'PAYPAY', 'CASH', 'OTHER'],
+        clear_default_fees: true,
+        auto_return: true,
+        skip_receipt: false
+      }
+    };
+    window.location = 'square-commerce-v1://payment/create?data=' +
+      encodeURIComponent(JSON.stringify(dataParameter));
+  }
+
+  // Squareから戻ってきたら一度だけ処理する（loadOrders 完了後に startApp から呼ばれる）
+  function handleSquareReturn(){
+    if (squareReturnHandled) return;
+    var cb = squareCallback;
+    if (!cb) {
+      try {
+        var saved = localStorage.getItem('yohaku_square_callback');
+        if (saved) cb = JSON.parse(saved);
+      } catch (e) {}
+    }
+    if (!cb) return;
+    squareReturnHandled = true;
+    try { localStorage.removeItem('yohaku_square_callback'); } catch (e) {}
+
+    if (cb.status !== 'ok') {
+      showError('Square決済は完了しませんでした' + (cb.error_code ? '（' + cb.error_code + '）' : '') + '。決済済みにはしていません。');
+      return;
+    }
+    var st = null;
+    try { st = cb.state ? JSON.parse(cb.state) : null; } catch (e) {}
+    if (!st || !st.seat) {
+      showError('Squareから戻りましたが、対象の席を特定できませんでした。内容を確認して手動で「決済済みにする」を押してください。取引ID: ' + (cb.transaction_id || 'なし'));
+      return;
+    }
+    var seatNo = Number(st.seat);
+    var stillUnpaid = 0;
+    orders.forEach(function(o){ if (o.seat_no === seatNo && !o.paid) stillUnpaid += o.total; });
+    if (stillUnpaid === 0) return; // 既に決済済み（再読込など）
+    if (stillUnpaid !== st.amount) {
+      showError('Square決済後に注文金額が変わっています（決済時 ' + yen(st.amount) + ' / 現在の未決済 ' + yen(stillUnpaid) + '）。自動で決済済みにせず、内容を確認してください。取引ID: ' + (cb.transaction_id || 'なし'));
+      return;
+    }
+    // なりすましURLでも無言で確定しないよう、最後はスタッフの目視確認を挟む
+    if (!window.confirm('Square決済が完了しました。\n' + seatNo + '番席 ' + yen(st.amount) + '\n取引ID: ' + (cb.transaction_id || 'なし') + '\n\nこの席を決済済みにしますか？')) {
+      return;
+    }
+    sb.from('orders').update({ paid: true })
+      .eq('seat_no', seatNo)
+      .eq('paid', false)
+      .gte('created_at', todayStartISO())
+      .then(function(res){
+        if (res.error) { showError('決済状態の更新に失敗しました。手動で「決済済みにする」を押してください。'); return; }
+        try { localStorage.removeItem('yohaku_square_pending'); } catch (e) {}
         loadOrders();
       });
   }
@@ -1451,7 +1574,7 @@
 
   function startApp(){
     initStaffPanel();
-    loadOrders();
+    loadOrders().then(function(){ handleSquareReturn(); });
     loadMenu();
     initSales();
     startRealtime();
